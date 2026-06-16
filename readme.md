@@ -33,7 +33,7 @@ Le projet est structuré en **Monorepo** via `npm workspaces`, permettant de par
 
 ### Arborescence du projet
 
-\`\`\`text
+```text
 /
 ├── packages/
 │   ├── client/       # Application React (UI + Canvas)
@@ -41,7 +41,7 @@ Le projet est structuré en **Monorepo** via `npm workspaces`, permettant de par
 │   └── shared/       # Logique de jeu, algorithmes et interfaces TS
 ├── package.json      # Configuration du workspace npm
 └── README.md
-\`\`\`
+```
 
 ---
 
@@ -52,22 +52,26 @@ Le projet est structuré en **Monorepo** via `npm workspaces`, permettant de par
 *   npm (inclus avec Node.js)
 
 ### 1. Cloner le dépôt
-\`\`\`bash
-git clone https://github.com/msm691/epitopia.git
+
+```bash
+git clone [https://github.com/msm691/epitopia.git](https://github.com/msm691/epitopia.git)
 cd epitopia
-\`\`\`
+```
 
 ### 2. Installer les dépendances
 Grâce aux workspaces npm, une seule commande permet d'installer les dépendances du client, du serveur et du dossier partagé :
-\`\`\`bash
+
+```bash
 npm install
-\`\`\`
+```
 
 ### 3. Lancer l'environnement de développement
 Pour lancer simultanément le serveur Node.js et l'application React :
-\`\`\`bash
+
+```bash
 npm run dev
-\`\`\`
+```
+
 *   Le client sera accessible sur : `http://localhost:3000` (ou port spécifié par Vite/Create React App).
 *   Le serveur écoutera sur : `http://localhost:4000`.
 
