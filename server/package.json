@@ -1,0 +1,20 @@
+{
+  "name": "@polytopia/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@polytopia/engine": "*",
+    "@polytopia/shared": "*",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.7.5",
+    "tsx": "^4.16.2"
+  }
+}
