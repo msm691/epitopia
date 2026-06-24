@@ -5,6 +5,7 @@ export * from "./combat.js";
 export * from "./tech.js";
 export * from "./victory.js";
 export * from "./ai.js";
+export * from "./sages.js";
 export * from "./units.js";
 export * from "./state.js";
 export * from "./isLegal.js";

@@ -8,5 +8,5 @@ import { createGameServer } from "./gameServer.js";
 const PORT = Number(process.env.PORT ?? 3001);
 
 createGameServer(PORT).then((server) => {
-  console.log(`[server] Polytopia LAN — en écoute sur le port ${server.port}`);
+  console.log(`[server] Epitopia LAN — en écoute sur le port ${server.port}`);
 });

@@ -17,6 +17,13 @@ export declare function unitById(state: GameState, id: string): Unit | undefined
 export declare function makeUnit(id: string, type: UnitType, ownerId: number, x: number, y: number, inactive: boolean, hp?: number): Unit;
 /** Une case est-elle franchissable pour s'y arrêter (terre + libre d'unité) ? */
 export declare function isWalkable(state: GameState, x: number, y: number): boolean;
+/** La case (x, y) est-elle de l'eau (lac / océan) ? */
+export declare function isWaterAt(state: GameState, x: number, y: number): boolean;
+/**
+ * Case où une unité peut s'arrêter : libre d'unité, et soit de la terre, soit de
+ * l'eau SI le joueur sait naviguer (tech Navigation -> embarquement).
+ */
+export declare function canEnterTile(state: GameState, x: number, y: number, canNavigate: boolean): boolean;
 /**
  * Case libre où faire apparaître une unité produite par une ville : la case-ville
  * si elle est vide, sinon la première case voisine franchissable (ordre déterministe),

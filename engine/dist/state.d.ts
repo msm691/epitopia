@@ -4,7 +4,7 @@
  * À l'Étape 1a : carte générée (terrains variés) + joueurs + cases de départ
  * marquées (futures capitales). Pas encore de villes/unités/économie (1b/1c).
  */
-import type { GameState } from "@polytopia/shared";
+import type { GameState, MapType } from "@polytopia/shared";
 export interface CreateStateOptions {
     seed: number;
     width?: number;
@@ -15,6 +15,8 @@ export interface CreateStateOptions {
     playerInfos?: readonly PlayerInfo[];
     /** Tour limite (défaut 30) ; null pour une partie illimitée. */
     turnLimit?: number | null;
+    /** Type de carte (proportion terre/eau ; défaut "terres"). */
+    mapType?: MapType;
 }
 export interface PlayerInfo {
     name: string;

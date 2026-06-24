@@ -12,6 +12,14 @@ export type PlayerId = number;
 /** Terrains possibles d'une tuile. */
 export type Terrain = "champ" | "foret" | "montagne" | "eau" | "ocean";
 
+/**
+ * Type de carte choisi au lancement (proportion de terre/eau) :
+ * - "terres"     : 100 % terre, aucun combat naval ;
+ * - "continents" : ~50 % eau, grandes masses séparées (la marine compte) ;
+ * - "archipel"   : ~75 % eau, petites îles dispersées (la marine est reine).
+ */
+export type MapType = "terres" | "continents" | "archipel";
+
 /** Ressources récoltables sur la carte (4 de base + 4 avancées). */
 export type Resource =
   | "fruits"
@@ -49,6 +57,10 @@ export interface Tile {
   resource?: Resource;
   /** Village neutre : une unité posée dessus peut y fonder une ville (FOUND_CITY). */
   village?: boolean;
+  /** Sage mystérieux (PNJ) sur cette case : nom affiché ("Stan"/"Nico"). Reste sur la carte. */
+  sage?: string;
+  /** Joueurs ayant déjà consulté ce sage : chacun ne peut accepter le marché qu'UNE fois. */
+  sageUsedBy?: PlayerId[];
   /** Propriétaire du territoire (ville rattachée), le cas échéant. */
   ownerId?: PlayerId;
   /** Id de la ville occupant cette case, le cas échéant. */
@@ -59,6 +71,9 @@ export interface Tile {
 
 /** Récompense au choix offerte à chaque montée de niveau d'une ville. */
 export type CityReward = "atelier" | "tresor" | "troupe" | "muraille" | "agrandir";
+
+/** Améliorations constructibles (action BUILD_IMPROVEMENT, débloquée par Construction). */
+export type ImprovementType = "atelier" | "muraille";
 
 /** Une ville. */
 export interface City {
@@ -72,12 +87,20 @@ export interface City {
   starsPerTurn: number;
   /** Nombre de récompenses de niveau en attente de choix (défaut 0). */
   rewardsToPick?: number;
-  /** Ateliers construits (+1 étoile/tour chacun, défaut 0). */
+  /** Ateliers TOTAUX (+1 étoile/tour chacun, défaut 0) : reçus en récompense de
+   *  niveau ET bâtis via Construction. */
   workshops?: number;
+  /** Ateliers BÂTIS via Construction uniquement (défaut 0). Sert au coût croissant
+   *  des ateliers construits — les ateliers de récompense ne le font PAS monter. */
+  builtWorkshops?: number;
   /** Muraille : renforce le bonus de défense de la ville. */
   hasWall?: boolean;
+  /** PV du rempart : l'ennemi doit les réduire à 0 avant de pouvoir entrer/capturer. */
+  wallHp?: number;
   /** Rayon d'exploitation (récolte), en Chebyshev. Défaut 1 ; grandit avec le territoire. */
   harvestRadius?: number;
+  /** Unité en cours de production (grosses unités) : occupe la ville jusqu'à `turnsLeft` = 0. */
+  production?: { unitType: UnitType; turnsLeft: number };
 }
 
 /** Statistiques de base d'un type d'unité. */
@@ -118,6 +141,8 @@ export interface Player {
   stars: number;
   unlockedTechs: string[];
   isAI: boolean;
+  /** Malus « Disette » d'un sage : saute le revenu du prochain tour de ce joueur. */
+  skipIncome?: boolean;
 }
 
 /** État complet et autoritaire de la partie. */
@@ -142,4 +167,17 @@ export interface GameState {
   nextCityId: number;
   /** Seed du RNG, pour le déterminisme. */
   seed: number;
+  /** Dernier résultat de consultation d'un sage (pour l'affichage client). Transitoire. */
+  lastSage?: {
+    /** Identifiant unique de l'événement (position@tour) pour n'afficher qu'une fois. */
+    id: string;
+    /** Joueur qui a consulté. */
+    by: PlayerId;
+    /** Issue bénéfique (true) ou néfaste (false). */
+    good: boolean;
+    /** Titre court de l'effet (ex. "Pactole"). */
+    title: string;
+    /** Description de l'effet appliqué. */
+    detail: string;
+  };
 }

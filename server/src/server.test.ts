@@ -241,9 +241,10 @@ function waitForLobby(socket: ClientSocket, pred: (l: LobbyState) => boolean): P
   });
 }
 
-/** Émet `join` et résout l'id assigné. */
-function waitForJoin(socket: ClientSocket, name: string, color: string): Promise<number> {
+/** Émet `join` et résout l'id assigné. (La couleur est attribuée par le serveur ;
+ *  le paramètre est conservé pour les appels existants mais ignoré.) */
+function waitForJoin(socket: ClientSocket, name: string, _color?: string): Promise<number> {
   const assigned = waitFor<number>(socket, "assigned");
-  socket.emit("join", { name, color });
+  socket.emit("join", { name });
   return assigned;
 }

@@ -4,12 +4,13 @@
  *
  * Implémentées à l'Étape 1 : END_TURN, TRAIN_UNIT, MOVE_UNIT.
  */
-import { CITY_HARVEST_RADIUS, FOUNDED_CITY_LEVEL, REWARD_TROOP_UNIT, RESOURCE_HARVEST_COST, RESOURCE_POP_GAIN, TREASURE_STARS, UNIT_STATS, } from "@polytopia/shared";
+import { CITY_HARVEST_RADIUS, FOUNDED_CITY_LEVEL, improvementCost, REWARD_TROOP_UNIT, RESOURCE_HARVEST_COST, RESOURCE_POP_GAIN, TREASURE_STARS, UNIT_STATS, unitBuildTurns, WALL_MAX_HP, } from "@polytopia/shared";
 import { isLegal } from "./isLegal.js";
 import { cityStarsPerTurn, computeStarsPerTurn, getPlayerIncome, levelUpCity } from "./economy.js";
 import { freeSpawnTileFor, makeUnit, tileAt, chebyshev } from "./units.js";
-import { computeCombat, getDefenseBonus } from "./combat.js";
+import { computeCombat, computeWallDamage, getDefenseBonus } from "./combat.js";
 import { computeTechCost, getPlayerCityCount, getTech } from "./tech.js";
+import { resolveConsultSage } from "./sages.js";
 import { tileIndex } from "./state.js";
 /** Erreur levée quand on tente d'appliquer une action illégale. */
 export class IllegalActionError extends Error {
@@ -43,10 +44,45 @@ export function applyAction(state, action) {
             return foundCity(state, action);
         case "CLAIM_CITY_REWARD":
             return claimCityReward(state, action);
-        // Rejetée par isLegal à ce stade — garde défensive.
         case "BUILD_IMPROVEMENT":
-            throw new IllegalActionError(action);
+            return buildImprovement(state, action);
+        case "ATTACK_WALL":
+            return attackWall(state, action);
+        case "CONSULT_SAGE":
+            return consultSage(state, action);
     }
+}
+/** Consulter un sage : délègue au module pur (RNG seedé, effet adaptatif). */
+function consultSage(state, action) {
+    return resolveConsultSage(state, action.at);
+}
+/** Bâtir une amélioration en dépensant des étoiles (tech Construction). */
+function buildImprovement(state, action) {
+    const city = state.cities.find((c) => c.id === action.cityId);
+    const cost = improvementCost(action.improvement, city.builtWorkshops ?? 0);
+    const players = state.players.map((p) => p.id === city.ownerId ? { ...p, stars: p.stars - cost } : p);
+    let updated = city;
+    if (action.improvement === "atelier") {
+        const workshops = (city.workshops ?? 0) + 1;
+        const builtWorkshops = (city.builtWorkshops ?? 0) + 1; // compteur de coût (hors récompenses)
+        updated = { ...city, workshops, builtWorkshops, starsPerTurn: cityStarsPerTurn(city.level, workshops) };
+    }
+    else {
+        updated = { ...city, hasWall: true, wallHp: WALL_MAX_HP };
+    }
+    const cities = state.cities.map((c) => (c.id === city.id ? updated : c));
+    return { ...state, players, cities };
+}
+/** Attaquer un rempart : réduit ses PV ; à 0 il tombe (la ville devient prenable). */
+function attackWall(state, action) {
+    const attacker = state.units.find((u) => u.id === action.attackerId);
+    const city = state.cities.find((c) => c.id === action.cityId);
+    const wallHp = (city.wallHp ?? 0) - computeWallDamage(attacker);
+    const updated = wallHp <= 0 ? { ...city, hasWall: false, wallHp: 0 } : { ...city, wallHp };
+    const cities = state.cities.map((c) => (c.id === city.id ? updated : c));
+    // L'attaquant a agi : il ne peut plus bouger ni attaquer ce tour.
+    const units = state.units.map((u) => u.id === attacker.id ? { ...u, hasAttacked: true, hasMoved: true } : u);
+    return { ...state, cities, units };
 }
 /**
  * Applique une récompense de montée de niveau choisie pour une ville, et décrémente
@@ -72,7 +108,7 @@ function claimCityReward(state, action) {
             break;
         }
         case "muraille":
-            updated = { ...updated, hasWall: true };
+            updated = { ...updated, hasWall: true, wallHp: WALL_MAX_HP };
             break;
         case "agrandir":
             updated = { ...updated, harvestRadius: (city.harvestRadius ?? CITY_HARVEST_RADIUS) + 1 };
@@ -218,10 +254,20 @@ function withTile(tiles, width, tile) {
 function trainUnit(state, action) {
     const city = state.cities.find((c) => c.id === action.cityId);
     const cost = UNIT_STATS[action.unitType].cost;
-    const id = `u${state.nextUnitId}`;
-    // Unité créée inactive (ne joue pas le tour de son recrutement).
-    const unit = makeUnit(id, action.unitType, city.ownerId, city.x, city.y, true);
+    // Le coût est payé tout de suite dans tous les cas.
     const players = state.players.map((p) => p.id === city.ownerId ? { ...p, stars: p.stars - cost } : p);
+    // Grosses unités : mises en PRODUCTION (la ville reste occupée, l'unité
+    // apparaîtra au début d'un futur tour du propriétaire).
+    const buildTurns = unitBuildTurns(action.unitType);
+    if (buildTurns > 0) {
+        const cities = state.cities.map((c) => c.id === city.id
+            ? { ...c, production: { unitType: action.unitType, turnsLeft: buildTurns } }
+            : c);
+        return { ...state, players, cities };
+    }
+    // Unité immédiate : créée inactive (ne joue pas le tour de son recrutement).
+    const id = `u${state.nextUnitId}`;
+    const unit = makeUnit(id, action.unitType, city.ownerId, city.x, city.y, true);
     const tile = tileAt(state, city.x, city.y);
     const tiles = withTile(state.tiles, state.width, { ...tile, unitId: id });
     return {
@@ -245,16 +291,62 @@ function moveUnit(state, action) {
     tiles = withTile(tiles, state.width, { ...newTile, unitId: unit.id });
     return { ...state, units, tiles };
 }
+/** Un joueur est encore en jeu tant qu'il possède au moins une ville. */
+function isAlive(state, pid) {
+    return state.cities.some((c) => c.ownerId === pid);
+}
 /**
  * Passe au joueur suivant. Le joueur dont le tour COMMENCE encaisse le revenu
  * de ses villes et voit ses unités rafraîchies (peuvent rejouer).
+ *
+ * Les joueurs ÉLIMINÉS (plus aucune ville) sont SAUTÉS : ils ne jouent plus.
+ * Le compteur de tour augmente d'un cran chaque fois qu'on repasse le joueur 0
+ * (nouvelle manche), même si 0 lui-même est éliminé et donc sauté.
  */
 function endTurn(state) {
-    const nextPlayer = (state.currentPlayer + 1) % state.players.length;
-    const turn = nextPlayer === 0 ? state.turn + 1 : state.turn;
-    const income = getPlayerIncome(state, nextPlayer);
-    const players = state.players.map((p) => p.id === nextPlayer ? { ...p, stars: p.stars + income } : p);
-    const units = state.units.map((u) => u.ownerId === nextPlayer ? { ...u, hasMoved: false, hasAttacked: false } : u);
-    return { ...state, players, units, currentPlayer: nextPlayer, turn };
+    const n = state.players.length;
+    let nextPlayer = state.currentPlayer;
+    let turn = state.turn;
+    for (let i = 0; i < n; i++) {
+        nextPlayer = (nextPlayer + 1) % n;
+        if (nextPlayer === 0)
+            turn += 1; // on a bouclé : nouvelle manche
+        if (isAlive(state, nextPlayer))
+            break; // sinon on saute cet éliminé
+    }
+    // Malus « Disette » : le joueur qui commence saute son revenu (puis le flag se consomme).
+    const skip = state.players[nextPlayer]?.skipIncome === true;
+    const income = skip ? 0 : getPlayerIncome(state, nextPlayer);
+    const players = state.players.map((p) => {
+        if (p.id !== nextPlayer)
+            return p;
+        const next = { ...p, stars: p.stars + income };
+        if (skip)
+            next.skipIncome = false; // consommé
+        return next;
+    });
+    let units = state.units.map((u) => u.ownerId === nextPlayer ? { ...u, hasMoved: false, hasAttacked: false } : u);
+    // Production des grosses unités : on décrémente le compteur des villes du joueur
+    // qui COMMENCE son tour ; à 0, l'unité apparaît (prête à agir) sur la ville ou
+    // une case voisine libre. Si aucune place, la production reste prête et réessaie.
+    let tiles = state.tiles;
+    let nextUnitId = state.nextUnitId;
+    const cities = state.cities.map((c) => {
+        if (c.ownerId !== nextPlayer || !c.production)
+            return c;
+        const turnsLeft = c.production.turnsLeft - 1;
+        if (turnsLeft > 0)
+            return { ...c, production: { ...c.production, turnsLeft } };
+        const spot = freeSpawnTileFor({ ...state, tiles, units }, c);
+        if (!spot)
+            return { ...c, production: { ...c.production, turnsLeft: 0 } };
+        const id = `u${nextUnitId++}`;
+        units = [...units, makeUnit(id, c.production.unitType, nextPlayer, spot.x, spot.y, false)];
+        const tile = tileAt({ ...state, tiles }, spot.x, spot.y);
+        tiles = withTile(tiles, state.width, { ...tile, unitId: id });
+        const { production: _done, ...rest } = c;
+        return rest;
+    });
+    return { ...state, players, units, cities, tiles, currentPlayer: nextPlayer, turn, nextUnitId };
 }
 //# sourceMappingURL=applyAction.js.map

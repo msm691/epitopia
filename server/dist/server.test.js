@@ -204,10 +204,11 @@ function waitForLobby(socket, pred) {
         socket.on("lobby", handler);
     });
 }
-/** Émet `join` et résout l'id assigné. */
-function waitForJoin(socket, name, color) {
+/** Émet `join` et résout l'id assigné. (La couleur est attribuée par le serveur ;
+ *  le paramètre est conservé pour les appels existants mais ignoré.) */
+function waitForJoin(socket, name, _color) {
     const assigned = waitFor(socket, "assigned");
-    socket.emit("join", { name, color });
+    socket.emit("join", { name });
     return assigned;
 }
 //# sourceMappingURL=server.test.js.map

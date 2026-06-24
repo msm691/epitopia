@@ -36,10 +36,10 @@ export function capitalId(playerId) {
  */
 export function createInitialState(options) {
     const playerCount = options.playerInfos?.length ?? options.playerCount ?? 2;
-    const size = mapSizeForPlayers(playerCount);
+    const size = mapSizeForPlayers(playerCount, options.mapType);
     const width = options.width ?? size;
     const height = options.height ?? size;
-    const { tiles, starts } = generateMap(options.seed, width, height, playerCount);
+    const { tiles, starts } = generateMap(options.seed, width, height, playerCount, options.mapType ?? "terres");
     const players = createPlayers(playerCount, options.playerInfos);
     // Capitale auto-fondée + 1 guerrier en garnison sur la case de départ.
     const cities = [];

@@ -11,13 +11,19 @@
   "dependencies": {
     "@polytopia/engine": "*",
     "@polytopia/shared": "*",
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
+    "@react-three/postprocessing": "^2.16.3",
+    "postprocessing": "^6.37.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "socket.io-client": "^4.7.5"
+    "socket.io-client": "^4.7.5",
+    "three": "^0.169.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.169.0",
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^5.4.2"
   }

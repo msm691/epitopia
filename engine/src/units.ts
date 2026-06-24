@@ -66,6 +66,28 @@ export function isWalkable(state: GameState, x: number, y: number): boolean {
   return tile.unitId === undefined;
 }
 
+/** La case (x, y) est-elle de l'eau (lac / océan) ? */
+export function isWaterAt(state: GameState, x: number, y: number): boolean {
+  const tile = tileAt(state, x, y);
+  return tile ? !isLandTerrain(tile.terrain) : false;
+}
+
+/**
+ * Case où une unité peut s'arrêter : libre d'unité, et soit de la terre, soit de
+ * l'eau SI le joueur sait naviguer (tech Navigation -> embarquement).
+ */
+export function canEnterTile(
+  state: GameState,
+  x: number,
+  y: number,
+  canNavigate: boolean,
+): boolean {
+  const tile = tileAt(state, x, y);
+  if (!tile) return false;
+  if (tile.unitId !== undefined) return false;
+  return isLandTerrain(tile.terrain) || canNavigate;
+}
+
 /**
  * Case libre où faire apparaître une unité produite par une ville : la case-ville
  * si elle est vide, sinon la première case voisine franchissable (ordre déterministe),

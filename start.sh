@@ -33,7 +33,7 @@ SERVER_PID=$!
 sleep 1
 
 echo ""
-echo "================ Polytopia Clone ================"
+echo "==================== Epitopia ===================="
 echo "  Cet appareil  : http://localhost:5173"
 echo "  Autres (LAN)  : http://$LAN_IP:5173"
 echo "  Serveur       : http://$LAN_IP:$PORT"

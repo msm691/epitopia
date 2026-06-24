@@ -18,12 +18,12 @@ import type {
   Unit,
   UnitType,
 } from "@polytopia/shared";
-import { RESOURCE_POP_GAIN, TECHS, UNIT_STATS } from "@polytopia/shared";
+import { NAVAL_MOVEMENT, RESOURCE_POP_GAIN, TECHS, UNIT_STATS } from "@polytopia/shared";
 import { isLegal } from "./isLegal.js";
 import { applyAction } from "./applyAction.js";
-import { chebyshev, freeSpawnTileFor } from "./units.js";
+import { chebyshev, freeSpawnTileFor, isWaterAt } from "./units.js";
 import { computeCombat, getDefenseBonus, maxHp } from "./combat.js";
-import { computeTechCost, getPlayerCityCount, trainableUnitsFor } from "./tech.js";
+import { computeTechCost, getPlayerCityCount, playerHasTech, trainableUnitsFor } from "./tech.js";
 
 /** Seuil de PV (fraction du max) en-dessous duquel une unité se replie. */
 const RETREAT_HP_RATIO = 0.4;
@@ -64,7 +64,12 @@ function bestMove(
   const d0 = nearestDist(from, targets);
   let best: MoveUnitAction | null = null;
   let bestScore = pref === "toward" ? d0 : pref === "away" ? d0 : -Infinity;
-  const mv = unit.movement;
+  // La vitesse navale ne vaut que si l'unité est DÉJÀ sur l'eau (embarquée) : on
+  // n'explore la portée NAVALE que dans ce cas ; sur terre, portée terrestre
+  // (embarquer = 1 case). isLegal écarte de toute façon les coups illégaux.
+  const canNavigate = playerHasTech(state, unit.ownerId, "navigation");
+  const onWater = isWaterAt(state, unit.x, unit.y);
+  const mv = canNavigate && onWater ? Math.max(unit.movement, NAVAL_MOVEMENT) : unit.movement;
   for (let dy = -mv; dy <= mv; dy++) {
     for (let dx = -mv; dx <= mv; dx++) {
       if (dx === 0 && dy === 0) continue;
@@ -105,6 +110,28 @@ function cheapestUnitCost(state: GameState, pid: PlayerId): number {
   let min = Infinity;
   for (const t of trainableUnitsFor(state, pid)) min = Math.min(min, UNIT_STATS[t].cost);
   return min;
+}
+
+/** Y a-t-il de l'eau dans le rayon `r` (Chebyshev) d'une case ? */
+function nearWater(state: GameState, c: Coord, r: number): boolean {
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (isWaterAt(state, c.x + dx, c.y + dy)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * L'IA gagnerait-elle à apprendre la Navigation ? Vrai si elle ne l'a pas encore
+ * ET qu'une de ses unités/villes borde l'eau (carte maritime : sans la marine,
+ * l'IA resterait coincée sur sa terre). Sert à prioriser la recherche.
+ */
+function aiWantsNavigation(state: GameState, pid: PlayerId): boolean {
+  if (playerHasTech(state, pid, "navigation")) return false;
+  for (const u of state.units) if (u.ownerId === pid && nearWater(state, u, 2)) return true;
+  for (const c of state.cities) if (c.ownerId === pid && nearWater(state, c, 2)) return true;
+  return false;
 }
 
 /**
@@ -236,6 +263,16 @@ export function nextAIAction(state: GameState, pid: PlayerId): Action {
           ? bestMove(state, u, enemies, "toward")
           : bestMove(state, u, cityCoords, "toward");
     if (m) return m;
+  }
+
+  // 6a. Marine : sur une carte d'eau, viser la Navigation (et son prérequis
+  //     Pêche) en priorité — sinon l'IA n'irait jamais coloniser/attaquer
+  //     par-delà la mer. Si pas encore abordable, on retombe sur le choix générique.
+  if (aiWantsNavigation(state, pid)) {
+    for (const techId of ["navigation", "peche"]) {
+      const action: Action = { type: "RESEARCH_TECH", techId };
+      if (isLegal(state, action)) return action;
+    }
   }
 
   // 6. Dépenser le surplus en recherche (tech légale la moins chère).

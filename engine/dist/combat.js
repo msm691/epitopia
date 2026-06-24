@@ -4,13 +4,21 @@
  * Le HP courant module la force : une unité blessée frappe et défend moins fort.
  * Riposte uniquement au corps-à-corps (attaquant adjacent et défenseur survivant).
  */
-import { DEFENSE_BONUS_CITY, DEFENSE_BONUS_TERRAIN, DEFENSE_BONUS_WALL, UNIT_STATS, } from "@polytopia/shared";
+import { DEFENSE_BONUS_CITY, DEFENSE_BONUS_TERRAIN, DEFENSE_BONUS_WALL, UNIT_STATS, WALL_DAMAGE_SCALE, } from "@polytopia/shared";
 import { tileAt } from "./units.js";
 /** Facteur d'échelle de la formule Polytopia. */
 const FORCE_SCALE = 4.5;
 /** PV maximum d'une unité (= stat de base de son type). */
 export function maxHp(unit) {
     return UNIT_STATS[unit.type].hp;
+}
+/**
+ * Dégâts qu'une unité inflige à un REMPART (siège). Pas de riposte du rempart.
+ * Force modulée par les PV de l'attaquant ; au moins 1. Catapulte/géant excellent.
+ */
+export function computeWallDamage(attacker) {
+    const force = attacker.attack * (attacker.hp / maxHp(attacker)) * WALL_DAMAGE_SCALE;
+    return Math.max(1, Math.round(force));
 }
 /**
  * Bonus de défense d'une unité selon sa case : ville ou terrain (forêt/montagne).
@@ -41,7 +49,10 @@ export function computeCombat(attacker, defender, isMelee, defenseBonus = 1) {
     if (total <= 0) {
         return { defenderDamage: 0, attackerDamage: 0, defenderDies: false, attackerDies: false };
     }
-    const defenderDamage = Math.round((attackForce / total) * attacker.attack * FORCE_SCALE);
+    // Plancher : une attaque réelle inflige TOUJOURS au moins 1 dégât (jamais 0
+    // « pour rien »). Sans force d'attaque, on laisse 0.
+    const rawDamage = Math.round((attackForce / total) * attacker.attack * FORCE_SCALE);
+    const defenderDamage = attackForce > 0 ? Math.max(1, rawDamage) : rawDamage;
     const defenderDies = defender.hp - defenderDamage <= 0;
     // Riposte seulement si corps-à-corps ET défenseur survivant.
     let attackerDamage = 0;

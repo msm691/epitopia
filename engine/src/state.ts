@@ -5,7 +5,7 @@
  * marquées (futures capitales). Pas encore de villes/unités/économie (1b/1c).
  */
 
-import type { City, GameState, Player, Tile, Unit } from "@polytopia/shared";
+import type { City, GameState, MapType, Player, Tile, Unit } from "@polytopia/shared";
 import {
   CAPITAL_START_LEVEL,
   DEFAULT_CIV_COLORS,
@@ -26,6 +26,8 @@ export interface CreateStateOptions {
   playerInfos?: readonly PlayerInfo[];
   /** Tour limite (défaut 30) ; null pour une partie illimitée. */
   turnLimit?: number | null;
+  /** Type de carte (proportion terre/eau ; défaut "terres"). */
+  mapType?: MapType;
 }
 
 export interface PlayerInfo {
@@ -66,11 +68,17 @@ export function capitalId(playerId: number): string {
  */
 export function createInitialState(options: CreateStateOptions): GameState {
   const playerCount = options.playerInfos?.length ?? options.playerCount ?? 2;
-  const size = mapSizeForPlayers(playerCount);
+  const size = mapSizeForPlayers(playerCount, options.mapType);
   const width = options.width ?? size;
   const height = options.height ?? size;
 
-  const { tiles, starts } = generateMap(options.seed, width, height, playerCount);
+  const { tiles, starts } = generateMap(
+    options.seed,
+    width,
+    height,
+    playerCount,
+    options.mapType ?? "terres",
+  );
   const players = createPlayers(playerCount, options.playerInfos);
 
   // Capitale auto-fondée + 1 guerrier en garnison sur la case de départ.

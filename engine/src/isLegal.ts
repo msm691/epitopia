@@ -8,8 +8,11 @@
 import type {
   Action,
   AttackAction,
+  AttackWallAction,
+  BuildImprovementAction,
   CaptureCityAction,
   ClaimCityRewardAction,
+  ConsultSageAction,
   FoundCityAction,
   GameState,
   HarvestResourceAction,
@@ -19,13 +22,18 @@ import type {
 } from "@polytopia/shared";
 import {
   ALL_CITY_REWARDS,
+  ALL_IMPROVEMENTS,
   AUTO_TERRITORY_EXPANSIONS,
   CITY_HARVEST_RADIUS,
+  improvementCost,
   MAX_HARVEST_RADIUS,
+  MAX_WORKSHOPS,
+  NAVAL_MOVEMENT,
   RESOURCE_HARVEST_COST,
   UNIT_STATS,
+  unitBuildTurns,
 } from "@polytopia/shared";
-import { chebyshev, freeSpawnTileFor, isWalkable, tileAt, unitById } from "./units.js";
+import { canEnterTile, chebyshev, freeSpawnTileFor, isWaterAt, tileAt, unitById } from "./units.js";
 import {
   computeTechCost,
   getPlayerCityCount,
@@ -65,8 +73,62 @@ export function isLegal(state: GameState, action: Action): boolean {
       return isLegalClaimReward(state, action);
 
     case "BUILD_IMPROVEMENT":
-      return false;
+      return isLegalBuildImprovement(state, action);
+
+    case "ATTACK_WALL":
+      return isLegalAttackWall(state, action);
+
+    case "CONSULT_SAGE":
+      return isLegalConsultSage(state, action);
   }
+}
+
+/** Consulter un sage : la case porte un sage, et une unité du joueur courant est adjacente. */
+function isLegalConsultSage(state: GameState, action: ConsultSageAction): boolean {
+  const tile = tileAt(state, action.at.x, action.at.y);
+  if (!tile || !tile.sage) return false;
+  // Chaque joueur ne peut accepter le marché qu'une seule fois par sage.
+  if ((tile.sageUsedBy ?? []).includes(state.currentPlayer)) return false;
+  return state.units.some(
+    (u) => u.ownerId === state.currentPlayer && chebyshev(u, action.at) <= 1,
+  );
+}
+
+/** Bâtir une amélioration (tech Construction) : ville du joueur, étoiles, plafonds. */
+function isLegalBuildImprovement(state: GameState, action: BuildImprovementAction): boolean {
+  if (!ALL_IMPROVEMENTS.includes(action.improvement)) return false;
+  const city = state.cities.find((c) => c.id === action.cityId);
+  if (!city) return false;
+  if (city.ownerId !== state.currentPlayer) return false;
+  if (!playerHasTech(state, state.currentPlayer, "construction")) return false;
+
+  const player = state.players[state.currentPlayer];
+  if (!player) return false;
+  if (player.stars < improvementCost(action.improvement, city.builtWorkshops ?? 0)) return false;
+
+  // Plafonds : un seul rempart, et un nombre limité d'ateliers.
+  if (action.improvement === "muraille" && city.hasWall) return false;
+  if (action.improvement === "atelier" && (city.workshops ?? 0) >= MAX_WORKSHOPS) return false;
+  return true;
+}
+
+/** Attaquer le rempart d'une ville ennemie : unité du joueur, à portée, rempart debout. */
+function isLegalAttackWall(state: GameState, action: AttackWallAction): boolean {
+  const attacker = unitById(state, action.attackerId);
+  if (!attacker) return false;
+  if (attacker.ownerId !== state.currentPlayer) return false;
+  if (attacker.hasAttacked) return false;
+
+  const city = state.cities.find((c) => c.id === action.cityId);
+  if (!city) return false;
+  if (city.ownerId === attacker.ownerId) return false; // doit être ennemie
+  if ((city.wallHp ?? 0) <= 0) return false; // pas de rempart à abattre
+
+  // À portée d'attaque (Chebyshev jusqu'à la case-ville).
+  if (chebyshev({ x: attacker.x, y: attacker.y }, { x: city.x, y: city.y }) > attacker.range) {
+    return false;
+  }
+  return true;
 }
 
 /** Encaisser une récompense de niveau : ville du joueur courant avec un choix en attente. */
@@ -170,8 +232,11 @@ function isLegalCapture(state: GameState, action: CaptureCityAction): boolean {
   if (!tile || tile.cityId === undefined) return false;
   const city = state.cities.find((c) => c.id === tile.cityId);
   if (!city) return false;
+  if (city.ownerId === unit.ownerId) return false;
 
-  return city.ownerId !== unit.ownerId;
+  // Un rempart intact doit d'abord être détruit (sécurité ; le mouvement l'empêche déjà).
+  if ((city.wallHp ?? 0) > 0) return false;
+  return true;
 }
 
 function isLegalTrain(state: GameState, action: TrainUnitAction): boolean {
@@ -184,14 +249,21 @@ function isLegalTrain(state: GameState, action: TrainUnitAction): boolean {
   // Ce doit être le tour du propriétaire de la ville.
   if (city.ownerId !== state.currentPlayer) return false;
 
+  // Une ville déjà en production est occupée (une unité à la fois).
+  if (city.production) return false;
+
   // Assez d'étoiles ?
   const player = state.players[state.currentPlayer];
   if (!player) return false;
   if (player.stars < UNIT_STATS[action.unitType].cost) return false;
 
-  // La case de la ville doit être libre (pas d'empilement d'unités).
-  const tile = tileAt(state, city.x, city.y);
-  if (!tile || tile.unitId !== undefined) return false;
+  // Unité immédiate : la case de la ville doit être libre (pas d'empilement).
+  // Unité à production : l'apparition est différée (case trouvée à la sortie),
+  // on autorise donc à la lancer même avec la garnison encore en place.
+  if (unitBuildTurns(action.unitType) === 0) {
+    const tile = tileAt(state, city.x, city.y);
+    if (!tile || tile.unitId !== undefined) return false;
+  }
 
   return true;
 }
@@ -207,12 +279,32 @@ function isLegalMove(state: GameState, action: MoveUnitAction): boolean {
   const from = { x: unit.x, y: unit.y };
   const to = action.to;
 
-  // Destination valide, distincte, à portée de mouvement.
+  // Destination valide, distincte.
   if (from.x === to.x && from.y === to.y) return false;
-  if (chebyshev(from, to) > unit.movement) return false;
 
-  // Case d'arrivée franchissable (terre + libre).
-  if (!isWalkable(state, to.x, to.y)) return false;
+  // Embarquement : l'eau n'est franchissable que si le joueur a Navigation. La
+  // vitesse navale (plus rapide) ne s'applique QUE si l'unité est DÉJÀ sur l'eau ;
+  // embarquer depuis la terre coûte un déplacement terrestre normal (1 case).
+  const canNavigate = playerHasTech(state, unit.ownerId, "navigation");
+  const naval = isWaterAt(state, from.x, from.y);
+  const reach = naval ? Math.max(unit.movement, NAVAL_MOVEMENT) : unit.movement;
+  if (chebyshev(from, to) > reach) return false;
+
+  // Case d'arrivée franchissable (terre, ou eau si Navigation ; et libre).
+  if (!canEnterTile(state, to.x, to.y, canNavigate)) return false;
+
+  const destTile = tileAt(state, to.x, to.y);
+
+  // Les montagnes ne se gravissent qu'avec la tech Escalade.
+  if (destTile?.terrain === "montagne" && !playerHasTech(state, unit.ownerId, "escalade")) {
+    return false;
+  }
+
+  // On ne peut pas entrer dans une ville ennemie tant que son rempart tient.
+  if (destTile?.cityId !== undefined) {
+    const city = state.cities.find((c) => c.id === destTile.cityId);
+    if (city && city.ownerId !== unit.ownerId && (city.wallHp ?? 0) > 0) return false;
+  }
 
   return true;
 }

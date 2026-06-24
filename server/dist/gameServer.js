@@ -6,7 +6,7 @@
  */
 import { createServer } from "node:http";
 import { Server } from "socket.io";
-import { MAX_PLAYERS, DEFAULT_TURN_LIMIT, DEFAULT_CIV_COLORS, } from "@polytopia/shared";
+import { MAX_PLAYERS, DEFAULT_GAME_SETTINGS, DEFAULT_CIV_COLORS, } from "@polytopia/shared";
 import { applyAction, isLegal, createInitialState, nextAIAction, checkVictory, mapSizeForPlayers, } from "@polytopia/engine";
 /** Délai entre deux actions d'IA (lisibilité côté joueurs). */
 const DEFAULT_AI_STEP_MS = 350;
@@ -26,11 +26,23 @@ export function createGameServer(port = 3001, opts = {}) {
     let started = false;
     let state = null;
     let aiTimer = null;
+    let settings = { ...DEFAULT_GAME_SETTINGS };
+    /** Vote de fin en cours (mode infini), ou null. */
+    let endVote = null;
+    /** Couleur attribuée par le serveur : tirée au hasard parmi les couleurs LIBRES
+     *  (jamais deux joueurs de la même couleur tant qu'il en reste). */
+    const pickColor = () => {
+        const used = new Set(lobby.map((p) => p.color));
+        const free = DEFAULT_CIV_COLORS.filter((c) => !used.has(c));
+        const pool = free.length > 0 ? free : DEFAULT_CIV_COLORS;
+        return pool[Math.floor(Math.random() * pool.length)] ?? "#ffffff";
+    };
     const lobbySnapshot = () => ({
         players: lobby.map((p) => ({ ...p })),
         hostId: lobby[0]?.id ?? null,
         started,
         maxPlayers: MAX_PLAYERS,
+        settings,
     });
     const isHost = (sid) => socketToPlayer.get(sid) === lobby[0] && lobby.length > 0;
     const socketIdOf = (player) => {
@@ -50,6 +62,36 @@ export function createGameServer(port = 3001, opts = {}) {
         if (state)
             io.emit("state", state);
     };
+    const connectedHumanCount = () => lobby.filter((p) => !p.isAI && p.connected).length;
+    const endVoteSnapshot = () => endVote
+        ? {
+            approve: [...endVote.approve],
+            decline: [...endVote.decline],
+            needed: endVote.needed,
+            humans: endVote.humans,
+        }
+        : null;
+    const broadcastEndVote = () => io.emit("endVote", endVoteSnapshot());
+    /** Évalue le vote : assez de POUR -> fin au score ; tout le monde a voté -> rejet. */
+    function evaluateEndVote() {
+        if (!endVote || !state)
+            return;
+        if (endVote.approve.size >= endVote.needed) {
+            // Fin de partie au score : on place la limite juste avant le tour courant
+            // (réutilise la victoire au score de l'engine, sans règle nouvelle).
+            state = { ...state, turnLimit: state.turn - 1 };
+            endVote = null;
+            clearTurnTimer();
+            broadcastState();
+            broadcastEndVote();
+            io.emit("turnTimer", null);
+            return;
+        }
+        if (endVote.approve.size + endVote.decline.size >= endVote.humans) {
+            endVote = null; // vote rejeté (tout le monde a répondu)
+        }
+        broadcastEndVote();
+    }
     const clearTurnTimer = () => {
         if (aiTimer)
             clearTimeout(aiTimer);
@@ -93,27 +135,43 @@ export function createGameServer(port = 3001, opts = {}) {
      */
     function driveTurn() {
         clearTurnTimer();
-        if (!started || !state || checkVictory(state).over)
+        if (!started || !state || checkVictory(state).over) {
+            io.emit("turnTimer", null);
             return;
+        }
         const cur = state.players[state.currentPlayer];
         if (!cur)
             return;
         if (cur.isAI) {
             aiTimer = setTimeout(stepAI, aiStepMs);
+            io.emit("turnTimer", null);
+            return;
+        }
+        const slot = lobby.find((p) => p.id === cur.id);
+        if (slot && !slot.connected) {
+            // Humain déconnecté : saut automatique (anti-blocage).
+            aiTimer = setTimeout(forceEndTurn, skipMs);
+            io.emit("turnTimer", null);
+        }
+        else if (settings.turnSeconds != null) {
+            // Humain connecté avec limite de temps : fin de tour auto à l'expiration.
+            aiTimer = setTimeout(forceEndTurn, settings.turnSeconds * 1000);
+            io.emit("turnTimer", settings.turnSeconds);
         }
         else {
-            const slot = lobby.find((p) => p.id === cur.id);
-            if (slot && !slot.connected)
-                aiTimer = setTimeout(forceEndTurn, skipMs);
+            io.emit("turnTimer", null);
         }
     }
     function resetGame() {
         clearTurnTimer();
         started = false;
         state = null;
+        endVote = null;
+        io.emit("endVote", null);
+        io.emit("turnTimer", null);
     }
     io.on("connection", (socket) => {
-        socket.on("join", ({ name, color }) => {
+        socket.on("join", ({ name }) => {
             if (started) {
                 // Reconnexion : reprendre un slot déconnecté de même nom.
                 const slot = lobby.find((p) => p.name === name && !p.connected);
@@ -138,7 +196,7 @@ export function createGameServer(port = 3001, opts = {}) {
             const player = {
                 id: lobby.length,
                 name: name || `Joueur ${lobby.length + 1}`,
-                color,
+                color: pickColor(),
                 connected: true,
                 isAI: false,
             };
@@ -154,7 +212,7 @@ export function createGameServer(port = 3001, opts = {}) {
             lobby.push({
                 id,
                 name: `IA ${id + 1}`,
-                color: DEFAULT_CIV_COLORS[id] ?? "#ffffff",
+                color: pickColor(),
                 connected: true,
                 isAI: true,
             });
@@ -183,25 +241,39 @@ export function createGameServer(port = 3001, opts = {}) {
             reassignIds();
             broadcastLobby();
         });
-        socket.on("start", (opts) => {
+        socket.on("setSettings", (s) => {
+            if (!isHost(socket.id) || started)
+                return; // seul l'hôte, avant lancement
+            const mapType = s.mapType === "continents" || s.mapType === "archipel" ? s.mapType : "terres";
+            settings = {
+                turnLimit: s.turnLimit == null ? null : Math.max(1, Math.floor(s.turnLimit)),
+                turnSeconds: s.turnSeconds == null ? null : Math.max(5, Math.floor(s.turnSeconds)),
+                mapSize: s.mapSize == null ? null : Math.max(8, Math.min(28, Math.floor(s.mapSize))),
+                mapType,
+            };
+            broadcastLobby();
+        });
+        socket.on("start", () => {
             if (!isHost(socket.id))
                 return; // seul l'hôte lance
             if (started || lobby.length < 2)
                 return; // au moins 2 joueurs (humains + IA)
             reassignIds();
             started = true;
-            const size = mapSizeForPlayers(lobby.length);
-            const turnLimit = opts?.turnLimit === undefined ? DEFAULT_TURN_LIMIT : opts.turnLimit;
+            endVote = null;
+            const size = settings.mapSize ?? mapSizeForPlayers(lobby.length, settings.mapType);
             state = createInitialState({
                 seed: Date.now() & 0xffffffff,
                 width: size,
                 height: size,
-                turnLimit,
+                turnLimit: settings.turnLimit,
+                mapType: settings.mapType,
                 playerInfos: lobby.map((p) => ({ name: p.name, color: p.color, isAI: p.isAI })),
             });
             broadcastLobby();
             broadcastState();
-            driveTurn(); // si le joueur 0 est une IA
+            io.emit("endVote", null);
+            driveTurn(); // si le joueur 0 est une IA / démarre le minuteur de tour
         });
         socket.on("action", (action) => {
             const player = socketToPlayer.get(socket.id);
@@ -234,6 +306,31 @@ export function createGameServer(port = 3001, opts = {}) {
             resetGame();
             broadcastLobby();
         });
+        socket.on("endVoteStart", () => {
+            const player = socketToPlayer.get(socket.id);
+            if (!started || !state || !player || player.isAI)
+                return;
+            if (state.turnLimit !== null)
+                return; // vote réservé au mode infini
+            if (checkVictory(state).over || endVote)
+                return;
+            const humans = connectedHumanCount();
+            const needed = Math.floor(humans / 2) + 1; // strictement plus de la moitié
+            endVote = { approve: new Set([player.id]), decline: new Set(), needed, humans };
+            evaluateEndVote();
+        });
+        socket.on("endVoteCast", (approve) => {
+            const player = socketToPlayer.get(socket.id);
+            if (!started || !player || player.isAI || !endVote)
+                return;
+            endVote.approve.delete(player.id);
+            endVote.decline.delete(player.id);
+            if (approve)
+                endVote.approve.add(player.id);
+            else
+                endVote.decline.add(player.id);
+            evaluateEndVote();
+        });
         socket.on("disconnect", () => {
             const player = socketToPlayer.get(socket.id);
             socketToPlayer.delete(socket.id);
@@ -253,6 +350,7 @@ export function createGameServer(port = 3001, opts = {}) {
             if (connectedHumans.length === 0) {
                 lobby.length = 0;
                 socketToPlayer.clear();
+                settings = { ...DEFAULT_GAME_SETTINGS };
                 resetGame();
             }
             else {

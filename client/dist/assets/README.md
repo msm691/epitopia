@@ -1,44 +1,51 @@
-# Assets graphiques (PNG)
+# Assets graphiques
 
-Dépose ici tes images. Tant qu'un fichier est absent, le jeu utilise un repli
-dessiné/emoji — donc tu peux ajouter les PNG **au fur et à mesure**, ils
-apparaissent automatiquement (pas besoin de redémarrer le build en prod ; en dev
-Vite recharge).
+Le rendu est en **vraie 3D** (React-Three-Fiber). Les unités sont aujourd'hui
+dessinées par des **formes géométriques procédurales** ; tu peux les remplacer,
+**une par une**, par de vrais **modèles 3D** (`.glb`). Tant qu'un modèle est
+absent ou non enregistré, l'unité garde son rendu procédural — donc aucun risque,
+tu peux avancer au fur et à mesure.
 
-Le rendu est **isométrique** (losanges 2:1).
+## Modèles d'unités (.glb) — recommandé
 
-**Formats conseillés (PNG transparent) :**
-- **terrain/** : tuile iso en losange, dessinée dans une zone `largeur × 0.75·largeur`
-  (ex. 128×96). Le losange occupe la moitié haute ; la partie basse sert à donner
-  un peu d'épaisseur/relief. Bords qui se raccordent proprement entre tuiles.
-- **units/** & **city/** : sprites « billboard » (vus de 3/4), ancrés en bas-centre,
-  dessinés au-dessus de la case. Silhouette claire sur fond transparent
-  (ils sont posés sur un disque/ombre à la couleur du joueur).
-- **resources/** : petites icônes (ex. 64×64).
+1. Dépose le fichier ici : `client/public/assets/units/<type>.glb`
+   (types : `guerrier archer cavalier defenseur epeiste catapulte chevalier geant`).
+2. Enregistre-le dans **`client/src/three/models.ts`** :
 
-## Arborescence attendue
+   ```ts
+   export const UNIT_MODELS = {
+     guerrier: { url: "/assets/units/guerrier.glb", scale: 0.4, y: 0, rotationY: 0 },
+   };
+   ```
 
-```
-assets/
-  terrain/
-    champ.png      # plaine
-    foret.png      # forêt
-    montagne.png   # montagne
-    eau.png        # lac
-    ocean.png      # océan
-  units/
-    guerrier.png   archer.png     cavalier.png   defenseur.png
-    epeiste.png    catapulte.png  chevalier.png  geant.png
-  resources/
-    fruits.png   gibier.png   poisson.png   cereales.png
-    minerai.png  bois.png     metal.png     luxe.png
-  city/
-    city.png       # bâtiment de ville (dessiné par-dessus le socle couleur joueur)
-```
+   - `scale` : l'unité doit « tenir » dans ~0,5 unité de large (ajuste à l'œil).
+   - `y` : remonte/descend pour poser les pieds au sol.
+   - `rotationY` : oriente le modèle (radians) pour qu'il regarde « vers l'avant ».
 
-## Conseils
-- Les **unités** et **villes** sont dessinées sur un disque à la **couleur du joueur** :
-  privilégie des sprites au centre, sur fond transparent (silhouette claire).
-- Les **terrains** remplissent toute la case : prévois des tuiles qui se juxtaposent
-  proprement (bords neutres).
-- Style cohérent (même palette / même éclairage) = rendu pro.
+3. C'est tout : le disque à la **couleur du joueur** et la **barre de vie** restent
+   gérés par le jeu, par-dessus ton modèle. Si le fichier est introuvable/cassé,
+   le rendu retombe automatiquement sur le procédural.
+
+**Format conseillé :** `.glb` (binaire, tout-en-un), **sans compression Draco**
+(sinon il faut configurer un décodeur), low-poly, style cartoon, échelle ~1 unité
+de haut, origine aux pieds, +Z vers l'avant. Garde des fichiers légers (< ~1–2 Mo).
+
+## Où trouver / générer des modèles
+
+- **Bibliothèques gratuites (CC0 / libres)** : [Kenney](https://kenney.nl/assets)
+  (packs « low-poly » parfaits pour ce style), [Poly Pizza](https://poly.pizza),
+  [Quaternius](https://quaternius.com). Télécharge en `.glb`/`.gltf`.
+- **Sketchfab** : énormément de modèles (filtre licence « downloadable » + compatible).
+- **Créer soi-même** : [Blender](https://www.blender.org) (gratuit) → *File ▸ Export ▸
+  glTF 2.0 (.glb)*. Coche « +Y up », applique les transforms (Ctrl+A) avant export.
+- **Génération assistée** : outils text-to-3D (ex. Meshy, Luma Genie, Rodin) — exporte
+  en `.glb`, puis allège le maillage dans Blender si besoin.
+- **Optimiser** : `gltf-transform` ou `gltfpack` (CLI) pour réduire le poids.
+
+> Astuce : commence par **1 ou 2 unités** (guerrier, géant), vérifie l'échelle/orientation
+> en jeu, puis complète. Garde un style et une palette cohérents entre les 8 unités.
+
+## (Hérité) Système PNG 2D
+
+L'ancien rendu isométrique 2D (dossier `client/src/canvas/`) n'est plus utilisé.
+Les PNG `terrain/ units/ resources/ city/` ne sont donc pas chargés par la 3D.

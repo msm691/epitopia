@@ -1,5 +1,5 @@
 {
-  "name": "polytopia-clone",
+  "name": "epitopia",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -25,5 +25,8 @@
     "@types/node": "^20.14.0",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"
+  },
+  "overrides": {
+    "@types/three": "0.169.0"
   }
 }

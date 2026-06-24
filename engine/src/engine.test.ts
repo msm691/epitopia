@@ -3,8 +3,16 @@ import type { City, GameState, Player, Resource, Terrain, Tile, Unit } from "@po
 import { createInitialState, capitalId, tileIndex } from "./state.js";
 import { generateMap, isLandTerrain, mapSizeForPlayers } from "./generateMap.js";
 import { computeStarsPerTurn, cityStarsPerTurn, getPlayerIncome, levelUpCity } from "./economy.js";
-import { computeCombat, getDefenseBonus } from "./combat.js";
-import { DEFENSE_BONUS_CITY, DEFENSE_BONUS_WALL, TREASURE_STARS } from "@polytopia/shared";
+import { computeCombat, computeWallDamage, getDefenseBonus } from "./combat.js";
+import {
+  DEFENSE_BONUS_CITY,
+  DEFENSE_BONUS_WALL,
+  IMPROVEMENT_COSTS,
+  RESOURCE_POP_GAIN,
+  TREASURE_STARS,
+  UNIT_STATS,
+  WALL_MAX_HP,
+} from "@polytopia/shared";
 import { computeTechCost, playerCanTrain, trainableUnitsFor } from "./tech.js";
 import { checkVictory, computeScore } from "./victory.js";
 import { nextAIAction, runAITurn } from "./ai.js";
@@ -258,6 +266,164 @@ describe("generateMap (génération & placement)", () => {
   });
 });
 
+describe("generateMap — types de carte & biomes", () => {
+  it("Terres : surtout de la terre, avec quelques petits lacs", () => {
+    const { tiles } = generateMap(42, 16, 16, 4, "terres");
+    const water = tiles.filter((t) => t.terrain === "eau").length / tiles.length;
+    expect(water).toBeGreaterThan(0); // quelques lacs
+    expect(water).toBeLessThan(0.1); // mais la terre domine très largement
+  });
+
+  it("mélange forêt, montagne et champ, le champ restant le terrain le plus fréquent", () => {
+    const { tiles } = generateMap(42, 16, 16, 4, "terres");
+    const champ = tiles.filter((t) => t.terrain === "champ").length;
+    const foret = tiles.filter((t) => t.terrain === "foret").length;
+    const montagne = tiles.filter((t) => t.terrain === "montagne").length;
+    // Vrai mélange : les trois biomes sont bien présents…
+    expect(foret).toBeGreaterThan(0);
+    expect(montagne).toBeGreaterThan(0);
+    // …mais le champ reste majoritaire face à chaque autre biome pris seul.
+    expect(champ).toBeGreaterThan(foret);
+    expect(champ).toBeGreaterThan(montagne);
+  });
+
+  it("est déterministe pour un type de carte donné", () => {
+    const a = generateMap(7, 16, 16, 4, "terres");
+    const b = generateMap(7, 16, 16, 4, "terres");
+    expect(a.tiles.map((t) => t.terrain)).toEqual(b.tiles.map((t) => t.terrain));
+  });
+
+  it("le défaut (appel à 4 arguments) produit une carte jouable, départs sur terre", () => {
+    const { starts, tiles } = generateMap(7, 16, 16, 4);
+    expect(starts).toHaveLength(4);
+    for (const s of starts) {
+      expect(isLandTerrain(tiles[tileIndex(16, s.x, s.y)]!.terrain)).toBe(true);
+    }
+  });
+
+  // --- Continents (étape 2) ---
+  /** Nombre de cases de terre dans le voisinage 8 (helper de test). */
+  function landNeighborsAround(tiles: Tile[], w: number, h: number, x: number, y: number): number {
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        if (isLandTerrain(tiles[ny * w + nx]!.terrain)) n++;
+      }
+    }
+    return n;
+  }
+
+  it("Continents : une part substantielle d'eau (la marine compte)", () => {
+    for (const seed of [1, 7, 42, 99]) {
+      const { tiles } = generateMap(seed, 16, 16, 4, "continents");
+      const water = tiles.filter((t) => t.terrain === "eau").length / tiles.length;
+      expect(water).toBeGreaterThan(0.3);
+      expect(water).toBeLessThan(0.65);
+    }
+  });
+
+  it("Continents : est déterministe", () => {
+    const a = generateMap(7, 18, 18, 4, "continents");
+    const b = generateMap(7, 18, 18, 4, "continents");
+    expect(a.tiles.map((t) => t.terrain)).toEqual(b.tiles.map((t) => t.terrain));
+    expect(a.starts).toEqual(b.starts);
+  });
+
+  it("Continents : chaque capitale repose sur de la vraie terre (pas un îlot d'1 case)", () => {
+    for (const seed of [1, 7, 42, 99]) {
+      const { tiles, starts } = generateMap(seed, 16, 16, 4, "continents");
+      expect(starts).toHaveLength(4);
+      for (const s of starts) {
+        expect(isLandTerrain(tiles[tileIndex(16, s.x, s.y)]!.terrain)).toBe(true);
+        expect(landNeighborsAround(tiles, 16, 16, s.x, s.y)).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it("Continents : sème des villages et garantit ≥2 ressources autour de chaque départ", () => {
+    for (const seed of [1, 7, 42]) {
+      const { tiles, starts } = generateMap(seed, 18, 18, 4, "continents");
+      expect(tiles.some((t) => t.village)).toBe(true);
+      for (const s of starts) {
+        let count = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = s.x + dx;
+            const ny = s.y + dy;
+            if (nx < 0 || ny < 0 || nx >= 18 || ny >= 18) continue;
+            if (tiles[tileIndex(18, nx, ny)]!.resource !== undefined) count++;
+          }
+        }
+        expect(count).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  // --- Archipel (étape 3) ---
+  it("Archipel : majorité d'eau (la marine est indispensable)", () => {
+    for (const seed of [1, 7, 42, 99]) {
+      const { tiles } = generateMap(seed, 20, 20, 4, "archipel");
+      const water = tiles.filter((t) => t.terrain === "eau").length / tiles.length;
+      expect(water).toBeGreaterThan(0.65);
+      expect(water).toBeLessThan(0.85);
+    }
+  });
+
+  it("Archipel : est déterministe", () => {
+    const a = generateMap(7, 20, 20, 4, "archipel");
+    const b = generateMap(7, 20, 20, 4, "archipel");
+    expect(a.tiles.map((t) => t.terrain)).toEqual(b.tiles.map((t) => t.terrain));
+    expect(a.starts).toEqual(b.starts);
+  });
+
+  it("Archipel : 1 capitale par joueur, sur une île viable et bien séparée", () => {
+    for (const seed of [1, 7, 42, 99]) {
+      const { tiles, starts } = generateMap(seed, 20, 20, 4, "archipel");
+      expect(starts).toHaveLength(4);
+      const keys = new Set(starts.map((s) => `${s.x},${s.y}`));
+      expect(keys.size).toBe(4); // toutes distinctes
+      for (const s of starts) {
+        // Sur de la terre, avec assez de terre autour pour exister/récolter.
+        expect(isLandTerrain(tiles[tileIndex(20, s.x, s.y)]!.terrain)).toBe(true);
+        expect(landNeighborsAround(tiles, 20, 20, s.x, s.y)).toBeGreaterThanOrEqual(2);
+      }
+      // Capitales bien séparées (≈ îles distinctes).
+      for (let i = 0; i < starts.length; i++) {
+        for (let j = i + 1; j < starts.length; j++) {
+          const a = starts[i]!;
+          const b = starts[j]!;
+          expect(Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))).toBeGreaterThanOrEqual(3);
+        }
+      }
+    }
+  });
+
+  it("Archipel : sème des villages et garantit ≥2 ressources autour de chaque départ", () => {
+    for (const seed of [1, 7, 42]) {
+      const { tiles, starts } = generateMap(seed, 20, 20, 4, "archipel");
+      expect(tiles.some((t) => t.village)).toBe(true);
+      for (const s of starts) {
+        let count = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = s.x + dx;
+            const ny = s.y + dy;
+            if (nx < 0 || ny < 0 || nx >= 20 || ny >= 20) continue;
+            if (tiles[tileIndex(20, nx, ny)]!.resource !== undefined) count++;
+          }
+        }
+        expect(count).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+});
+
 describe("END_TURN", () => {
   it("passe au joueur suivant sans changer de tour", () => {
     const s = stateWithPlayers(2);
@@ -285,6 +451,32 @@ describe("END_TURN", () => {
     const s = createInitialState({ seed: 1, playerCount: 0 });
     expect(isLegal(s, { type: "END_TURN" })).toBe(false);
     expect(() => applyAction(s, { type: "END_TURN" })).toThrow(IllegalActionError);
+  });
+
+  it("saute un joueur éliminé (sans ville)", () => {
+    let s = createInitialState({ seed: 7, playerCount: 3 });
+    expect(s.currentPlayer).toBe(0);
+    // Le joueur 1 perd toutes ses villes -> il est éliminé.
+    s = { ...s, cities: s.cities.filter((c) => c.ownerId !== 1) };
+    s = applyAction(s, { type: "END_TURN" });
+    expect(s.currentPlayer).toBe(2); // 1 est sauté
+  });
+
+  it("incrémente le tour en repassant le joueur 0 même si un éliminé est sauté", () => {
+    let s = createInitialState({ seed: 7, playerCount: 3 });
+    s = { ...s, cities: s.cities.filter((c) => c.ownerId !== 1), currentPlayer: 2 };
+    const before = s.turn;
+    s = applyAction(s, { type: "END_TURN" });
+    expect(s.currentPlayer).toBe(0); // 2 -> (saute rien) -> 0
+    expect(s.turn).toBe(before + 1); // nouvelle manche
+  });
+
+  it("saute plusieurs éliminés d'affilée", () => {
+    let s = createInitialState({ seed: 7, playerCount: 4 });
+    // 1 et 2 éliminés : depuis 0, le tour doit aller directement à 3.
+    s = { ...s, cities: s.cities.filter((c) => c.ownerId !== 1 && c.ownerId !== 2) };
+    s = applyAction(s, { type: "END_TURN" });
+    expect(s.currentPlayer).toBe(3);
   });
 });
 
@@ -424,6 +616,13 @@ describe("computeCombat (formule Polytopia)", () => {
     const r = computeCombat(guerrier(10), guerrier(2), true);
     expect(r.defenderDies).toBe(true);
     expect(r.attackerDamage).toBe(0);
+  });
+
+  it("plancher : une attaque réelle inflige toujours au moins 1 dégât", () => {
+    // Attaquant quasi-mort contre un défenseur plein PV très bonifié :
+    // sans plancher la formule arrondirait à 0 ; on garantit >= 1.
+    const r = computeCombat(guerrier(1), guerrier(10), true, 2.0);
+    expect(r.defenderDamage).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -589,11 +788,8 @@ describe("recrutement des 8 unités via tech (2b)", () => {
     ["archer", ["chasse"], { range: 2 }],
     ["cavalier", ["equitation"], { movement: 2 }],
     ["defenseur", ["strategie"], { defense: 3 }],
-    ["catapulte", ["chasse", "archerie"], { range: 3 }],
     ["epeiste", ["escalade", "forge"], { attack: 3 }],
-    ["chevalier", ["equitation", "chevalerie"], { movement: 3 }],
-    ["geant", ["strategie", "tactique"], { hp: 40 }],
-  ])("recrute le %s après ses techs, avec ses stats", (unitType, techs, expectedStats) => {
+  ])("recrute (immédiat) le %s après ses techs, avec ses stats", (unitType, techs, expectedStats) => {
     const s = withTechs(techs as string[]);
     const next = applyAction(s, {
       type: "TRAIN_UNIT",
@@ -603,6 +799,22 @@ describe("recrutement des 8 unités via tech (2b)", () => {
     const unit = next.units.at(-1)!;
     expect(unit.type).toBe(unitType);
     expect(unit).toMatchObject(expectedStats);
+  });
+
+  it.each([
+    ["catapulte", ["chasse", "archerie"]],
+    ["chevalier", ["equitation", "chevalerie"]],
+    ["geant", ["strategie", "tactique"]],
+  ])("met en production (différé) le %s sans le faire apparaître tout de suite", (unitType, techs) => {
+    const s = withTechs(techs as string[]);
+    const before = s.units.length;
+    const next = applyAction(s, {
+      type: "TRAIN_UNIT",
+      cityId: "c0",
+      unitType: unitType as GameState["units"][number]["type"],
+    });
+    expect(next.units).toHaveLength(before); // rien n'apparaît immédiatement
+    expect(next.cities.find((c) => c.id === "c0")!.production?.unitType).toBe(unitType);
   });
 
   it("trainableUnitsFor s'étend avec les techs débloquées", () => {
@@ -858,6 +1070,47 @@ describe("IA gloutonne (4a)", () => {
     expect(nextAIAction(s, 0)).toEqual({ type: "END_TURN" });
   });
 
+  // --- IA navale (étape 4) ---
+  it("avec Navigation, embarque pour traverser l'eau vers l'ennemi", () => {
+    const s = aiState(5);
+    s.players = s.players.map((p) =>
+      p.id === 0 ? { ...p, unlockedTechs: ["peche", "navigation"] } : p,
+    );
+    for (let y = 0; y < 5; y++) s.tiles[tileIndex(5, 2, y)]!.terrain = "eau"; // bras de mer x=2
+    activeWarrior(s, "u0", 0, 1, 2);
+    placeUnit(s, makeUnit("foe", "guerrier", 1, 3, 2, false));
+    // Pour se rapprocher de l'ennemi, l'IA doit EMBARQUER sur le bras de mer.
+    const a = nextAIAction(s, 0);
+    expect(a.type).toBe("MOVE_UNIT");
+    if (a.type === "MOVE_UNIT") {
+      expect(s.tiles[tileIndex(5, a.to.x, a.to.y)]!.terrain).toBe("eau"); // a embarqué
+      const after = Math.max(Math.abs(a.to.x - 3), Math.abs(a.to.y - 2));
+      expect(after).toBeLessThan(2); // se rapproche (distance initiale = 2)
+    }
+  });
+
+  it("sans Navigation mais bordée d'eau, recherche d'abord la marine (Pêche)", () => {
+    const s = aiState(5);
+    s.players = s.players.map((p) => (p.id === 0 ? { ...p, unlockedTechs: [] } : p));
+    addCity(s, "c0", 0, 2, 2);
+    s.tiles[tileIndex(5, 2, 0)]!.terrain = "eau"; // eau dans le rayon 2 de la ville
+    // Armée au plafond (4 unités inactives) : ni recrutement ni déplacement utile.
+    for (let i = 0; i < 4; i++) placeUnit(s, makeUnit(`g${i}`, "guerrier", 0, i, 4, true));
+    expect(nextAIAction(s, 0)).toEqual({ type: "RESEARCH_TECH", techId: "peche" });
+  });
+
+  it("sans Navigation, ne traverse jamais l'eau (reste à terre)", () => {
+    const s = aiState(5);
+    s.players = s.players.map((p) => (p.id === 0 ? { ...p, unlockedTechs: [], stars: 0 } : p));
+    for (let y = 0; y < 5; y++) s.tiles[tileIndex(5, 2, y)]!.terrain = "eau";
+    activeWarrior(s, "u0", 0, 1, 2);
+    placeUnit(s, makeUnit("foe", "guerrier", 1, 3, 2, false));
+    const a = nextAIAction(s, 0);
+    if (a.type === "MOVE_UNIT") {
+      expect(s.tiles[tileIndex(5, a.to.x, a.to.y)]!.terrain).not.toBe("eau");
+    }
+  });
+
   it("runAITurn termine toujours par END_TURN (et ne plante pas)", () => {
     const base = createInitialState({ seed: 3 });
     const { actions } = runAITurn(base, 0);
@@ -917,13 +1170,20 @@ describe("bonus défensif (anti-rush, Étape A)", () => {
 
 describe("distance & taille de carte (anti-rush, Étape B)", () => {
   it("mapSizeForPlayers grandit avec le nombre de joueurs", () => {
-    expect(mapSizeForPlayers(2)).toBe(14);
-    expect(mapSizeForPlayers(4)).toBe(16);
-    expect(mapSizeForPlayers(8)).toBe(20);
+    expect(mapSizeForPlayers(2)).toBe(16);
+    expect(mapSizeForPlayers(4)).toBe(18);
+    expect(mapSizeForPlayers(8)).toBe(22);
+  });
+
+  it("mapSizeForPlayers agrandit la carte Auto quand l'eau domine", () => {
+    // Plus il y a d'eau, plus on agrandit : terres < continents < archipel.
+    expect(mapSizeForPlayers(4, "terres")).toBe(18);
+    expect(mapSizeForPlayers(4, "continents")).toBeGreaterThan(mapSizeForPlayers(4, "terres"));
+    expect(mapSizeForPlayers(4, "archipel")).toBeGreaterThan(mapSizeForPlayers(4, "continents"));
   });
 
   it("les 2 joueurs spawn loin (traverser prend de nombreux tours)", () => {
-    // Sur la carte par défaut (14x14), la distance Chebyshev doit être grande
+    // Sur la carte par défaut (16x16), la distance Chebyshev doit être grande
     // => avec mouvement 1, il faut beaucoup de tours pour atteindre l'ennemi.
     for (let seed = 1; seed <= 30; seed++) {
       const s = createInitialState({ seed });
@@ -1017,12 +1277,56 @@ describe("Villages neutres & expansion (FOUND_CITY)", () => {
     }
   });
 
+  it("villages équilibrés entre joueurs (fairness de spawn) en 1v1", () => {
+    // Chaque village est rattaché à son départ le plus proche : les deux camps
+    // doivent en recevoir ~autant (écart <= 1), quel que soit le seed.
+    for (const seed of [1, 7, 42, 123, 777]) {
+      const { tiles, starts } = generateMap(seed, 16, 16, 2);
+      let c0 = 0;
+      let c1 = 0;
+      for (const v of tiles.filter((t) => t.village)) {
+        const d0 = Math.max(Math.abs(v.x - starts[0]!.x), Math.abs(v.y - starts[0]!.y));
+        const d1 = Math.max(Math.abs(v.x - starts[1]!.x), Math.abs(v.y - starts[1]!.y));
+        if (d0 <= d1) c0++;
+        else c1++;
+      }
+      const counts = [c0, c1];
+      expect(Math.abs(counts[0]! - counts[1]!)).toBeLessThanOrEqual(1);
+      expect(Math.min(counts[0]!, counts[1]!)).toBeGreaterThanOrEqual(1); // personne à sec
+    }
+  });
+
   it("villages déterministes : même seed => mêmes positions", () => {
     const key = (t: Tile) => `${t.x},${t.y}`;
     const a = generateMap(7, 14, 14, 2).tiles.filter((t) => t.village).map(key);
     const b = generateMap(7, 14, 14, 2).tiles.filter((t) => t.village).map(key);
     expect(a.length).toBeGreaterThan(0);
     expect(a).toEqual(b);
+  });
+
+  it("garantit de quoi atteindre le niveau 2 dans le rayon 1 de chaque village", () => {
+    const W = 16;
+    const H = 16;
+    for (const seed of [1, 2, 3, 7, 42, 123]) {
+      const { tiles } = generateMap(seed, W, H, 2);
+      const villages = tiles.filter((t) => t.village);
+      expect(villages.length).toBeGreaterThan(0);
+      for (const v of villages) {
+        let pop = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = v.x + dx;
+            const ny = v.y + dy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+            const t = tiles[ny * W + nx];
+            if (t?.resource) pop += RESOURCE_POP_GAIN[t.resource];
+          }
+        }
+        // Seuil niveau 1 -> 2 = 2 population : récoltable dans le rayon de fondation.
+        expect(pop).toBeGreaterThanOrEqual(2);
+      }
+    }
   });
 
   it("FOUND_CITY n'est légal que sur un village, avec une unité du joueur courant", () => {
@@ -1228,5 +1532,432 @@ describe("Territoire d'exploitation (agrandissement auto puis au choix)", () => 
 
     next.cities[0]!.rewardsToPick = 1;
     expect(isLegal(next, claim)).toBe(false); // plafond (MAX_HARVEST_RADIUS) atteint
+  });
+});
+
+describe("Construction (BUILD_IMPROVEMENT) — puits à étoiles", () => {
+  /** Ville libre du joueur 0 avec `stars` étoiles ET la tech Construction. */
+  function cityWithConstruction(stars: number): GameState {
+    const s = freeCityState(stars);
+    s.players = s.players.map((p) =>
+      p.id === 0 ? { ...p, unlockedTechs: ["agriculture", "construction"] } : p,
+    );
+    return s;
+  }
+
+  it("bâtir un atelier : déduit le coût, +1 atelier, +1★/tour", () => {
+    const s = cityWithConstruction(10);
+    const before = s.cities[0]!.starsPerTurn;
+    const next = applyAction(s, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "atelier" });
+    const c = next.cities[0]!;
+    expect(next.players[0]!.stars).toBe(10 - IMPROVEMENT_COSTS.atelier);
+    expect(c.workshops).toBe(1);
+    expect(c.starsPerTurn).toBe(before + 1);
+  });
+
+  it("les ateliers de RÉCOMPENSE ne font pas monter le coût des ateliers bâtis", () => {
+    const s = cityWithConstruction(20);
+    // Ville déjà dotée de 2 ateliers obtenus en récompense de niveau.
+    s.cities[0]!.workshops = 2;
+    s.cities[0]!.builtWorkshops = 0;
+    // Le 1er atelier BÂTI coûte quand même 5 (et non 15).
+    const next = applyAction(s, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "atelier" });
+    expect(next.players[0]!.stars).toBe(20 - 5);
+    expect(next.cities[0]!.workshops).toBe(3); // total
+    expect(next.cities[0]!.builtWorkshops).toBe(1); // compteur de coût
+  });
+
+  it("le coût d'atelier croît : 5, puis 10, puis 15 (anti-stack)", () => {
+    let s = cityWithConstruction(40);
+    expect(s.players[0]!.stars).toBe(40);
+    s = applyAction(s, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "atelier" });
+    expect(s.players[0]!.stars).toBe(35); // -5 (1er)
+    s = applyAction(s, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "atelier" });
+    expect(s.players[0]!.stars).toBe(25); // -10 (2e)
+    s = applyAction(s, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "atelier" });
+    expect(s.players[0]!.stars).toBe(10); // -15 (3e)
+    expect(s.cities[0]!.workshops).toBe(3);
+    // 4e atelier coûterait 20 -> illégal avec seulement 10★.
+    expect(isLegal(s, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "atelier" })).toBe(false);
+  });
+
+  it("bâtir un rempart : hasWall + PV pleins, étoiles déduites", () => {
+    const s = cityWithConstruction(10);
+    const next = applyAction(s, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "muraille" });
+    const c = next.cities[0]!;
+    expect(c.hasWall).toBe(true);
+    expect(c.wallHp).toBe(WALL_MAX_HP);
+    expect(next.players[0]!.stars).toBe(10 - IMPROVEMENT_COSTS.muraille);
+  });
+
+  it("illégal sans la tech Construction ou sans assez d'étoiles", () => {
+    const noTech = freeCityState(10);
+    expect(isLegal(noTech, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "atelier" })).toBe(false);
+    const poor = cityWithConstruction(1);
+    expect(isLegal(poor, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "atelier" })).toBe(false);
+  });
+
+  it("un seul rempart par ville", () => {
+    const s = cityWithConstruction(30);
+    const once = applyAction(s, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "muraille" });
+    expect(isLegal(once, { type: "BUILD_IMPROVEMENT", cityId: "c0", improvement: "muraille" })).toBe(false);
+  });
+});
+
+describe("Siège : le rempart bloque l'entrée/capture jusqu'à destruction", () => {
+  /** Ville ennemie (joueur 1) en (2,2) avec un rempart de `wallHp` PV. */
+  function walledEnemyCity(wallHp: number): GameState {
+    const s = gridState(5, 2);
+    s.cities.push({
+      id: "c1",
+      ownerId: 1,
+      x: 2,
+      y: 2,
+      level: 1,
+      population: 0,
+      starsPerTurn: 2,
+      hasWall: wallHp > 0,
+      wallHp,
+    });
+    s.tiles[tileIndex(5, 2, 2)]!.cityId = "c1";
+    s.tiles[tileIndex(5, 2, 2)]!.ownerId = 1;
+    return s;
+  }
+
+  it("rempart intact : on ne peut ni entrer ni capturer", () => {
+    const s = walledEnemyCity(WALL_MAX_HP);
+    activeWarrior(s, "u0", 0, 2, 1); // adjacent à la ville
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 2, y: 2 } })).toBe(false);
+  });
+
+  it("attaque partielle : PV réduits, rempart tient", () => {
+    const s = walledEnemyCity(WALL_MAX_HP);
+    activeWarrior(s, "u0", 0, 2, 1);
+    const dmg = computeWallDamage(s.units.find((u) => u.id === "u0")!);
+    const next = applyAction(s, { type: "ATTACK_WALL", attackerId: "u0", cityId: "c1" });
+    const c = next.cities.find((c) => c.id === "c1")!;
+    expect(c.wallHp).toBe(WALL_MAX_HP - dmg);
+    expect(c.hasWall).toBe(true);
+    const a = next.units.find((u) => u.id === "u0")!;
+    expect(a.hasAttacked).toBe(true);
+    expect(a.hasMoved).toBe(true);
+  });
+
+  it("rempart à 0 : il tombe et la ville redevient prenable", () => {
+    const s = walledEnemyCity(3); // tombe en un coup (guerrier ~4)
+    activeWarrior(s, "u0", 0, 2, 1);
+    const next = applyAction(s, { type: "ATTACK_WALL", attackerId: "u0", cityId: "c1" });
+    const c = next.cities.find((c) => c.id === "c1")!;
+    expect(c.wallHp).toBe(0);
+    expect(c.hasWall).toBe(false);
+  });
+
+  it("sans rempart : entrée et capture possibles", () => {
+    const s = walledEnemyCity(0);
+    activeWarrior(s, "u0", 0, 2, 1);
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 2, y: 2 } })).toBe(true);
+
+    const onCity = walledEnemyCity(0);
+    activeWarrior(onCity, "u1", 0, 2, 2); // déjà sur la ville
+    expect(isLegal(onCity, { type: "CAPTURE_CITY", unitId: "u1" })).toBe(true);
+  });
+
+  it("attaquer un rempart inexistant est illégal", () => {
+    const s = walledEnemyCity(0);
+    activeWarrior(s, "u0", 0, 2, 1);
+    expect(isLegal(s, { type: "ATTACK_WALL", attackerId: "u0", cityId: "c1" })).toBe(false);
+  });
+});
+
+describe("Marine / embarquement (Navigation)", () => {
+  const water = (s: GameState, x: number, y: number) => {
+    s.tiles[tileIndex(s.width, x, y)]!.terrain = "eau";
+  };
+  const withNav = (s: GameState): GameState => {
+    s.players = s.players.map((p) =>
+      p.id === 0 ? { ...p, unlockedTechs: ["peche", "navigation"] } : p,
+    );
+    return s;
+  };
+
+  it("sans Navigation, l'eau reste infranchissable", () => {
+    const s = gridState(5, 2);
+    water(s, 1, 2);
+    activeWarrior(s, "u0", 0, 0, 2);
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 1, y: 2 } })).toBe(false);
+  });
+
+  it("avec Navigation, une unité embarque sur l'eau", () => {
+    const s = withNav(gridState(5, 2));
+    water(s, 1, 2);
+    activeWarrior(s, "u0", 0, 0, 2);
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 1, y: 2 } })).toBe(true);
+    const next = applyAction(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 1, y: 2 } });
+    const u = next.units.find((x) => x.id === "u0")!;
+    expect([u.x, u.y]).toEqual([1, 2]);
+  });
+
+  it("embarquer depuis la terre : 1 seule case (pas de saut naval de 2)", () => {
+    const s = withNav(gridState(5, 2));
+    water(s, 1, 2);
+    water(s, 2, 2);
+    activeWarrior(s, "u0", 0, 0, 2); // sur terre (movement 1)
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 1, y: 2 } })).toBe(true); // embarque, 1 case
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 2, y: 2 } })).toBe(false); // PAS 2 cases depuis la terre
+  });
+
+  it("vitesse navale 2 : une unité DÉJÀ sur l'eau franchit 2 cases de mer, mais pas 3", () => {
+    const s = withNav(gridState(6, 2));
+    water(s, 1, 2);
+    water(s, 2, 2);
+    water(s, 3, 2);
+    placeUnit(s, makeUnit("u0", "guerrier", 0, 1, 2, false)); // déjà embarqué (movement 1)
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 3, y: 2 } })).toBe(true); // 2 cases de mer
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 4, y: 2 } })).toBe(false); // 3 cases = trop loin
+  });
+
+  it("débarquer : de l'eau vers la terre adjacente", () => {
+    const s = withNav(gridState(5, 2));
+    water(s, 2, 2);
+    placeUnit(s, makeUnit("u0", "guerrier", 0, 2, 2, false)); // déjà embarqué
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 3, y: 2 } })).toBe(true);
+  });
+
+  it("impossible d'embarquer sur une case d'eau occupée", () => {
+    const s = withNav(gridState(5, 2));
+    water(s, 1, 2);
+    activeWarrior(s, "u0", 0, 0, 2);
+    placeUnit(s, makeUnit("blk", "guerrier", 1, 1, 2, false));
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 1, y: 2 } })).toBe(false);
+  });
+});
+
+describe("génération : terre/eau selon le type de carte", () => {
+  it("Terres : majoritairement terrestre, parsemé de petits lacs", () => {
+    const { tiles } = generateMap(7, 16, 16, 4, "terres");
+    const water = tiles.filter((t) => t.terrain === "eau" || t.terrain === "ocean").length;
+    expect(water).toBeGreaterThan(0); // quelques lacs (l'embarquement sert à les traverser)
+    expect(water).toBeLessThan(tiles.length * 0.1); // mais ça reste une carte de terre
+  });
+});
+
+describe("montagnes : tech Escalade requise (#6)", () => {
+  it("interdit d'entrer sur une montagne sans Escalade, autorise avec", () => {
+    const s = gridState(5, 2);
+    s.tiles[tileIndex(5, 3, 2)]!.terrain = "montagne";
+    activeWarrior(s, "u0", 0, 2, 2);
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 3, y: 2 } })).toBe(false);
+    s.players = s.players.map((p) => (p.id === 0 ? { ...p, unlockedTechs: ["escalade"] } : p));
+    expect(isLegal(s, { type: "MOVE_UNIT", unitId: "u0", to: { x: 3, y: 2 } })).toBe(true);
+  });
+});
+
+describe("équilibrage des unités (#8) — rééquilibrage tactique", () => {
+  it("aucune unité n'a une défense de 0 (sinon dégâts maximaux / one-shots)", () => {
+    for (const t of Object.keys(UNIT_STATS) as (keyof typeof UNIT_STATS)[]) {
+      expect(UNIT_STATS[t].defense).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("les attaques sont plafonnées à 4 (plus de chevalier/géant à 5)", () => {
+    for (const t of Object.keys(UNIT_STATS) as (keyof typeof UNIT_STATS)[]) {
+      expect(UNIT_STATS[t].attack).toBeLessThanOrEqual(4);
+    }
+    expect(UNIT_STATS.chevalier.attack).toBe(3);
+    expect(UNIT_STATS.geant.attack).toBe(4);
+  });
+
+  it("catapulte 12 PV/atk 3/def 1 ; géant 28 PV ; chevalier 16 PV mobile (mvt 3)", () => {
+    expect(UNIT_STATS.catapulte).toMatchObject({ hp: 12, attack: 3, defense: 1 });
+    expect(UNIT_STATS.geant.hp).toBe(28);
+    expect(UNIT_STATS.chevalier).toMatchObject({ hp: 16, defense: 2, movement: 3 });
+  });
+
+  it("plus de one-shot entre unités de base : un chevalier ne tue pas un guerrier plein PV", () => {
+    const chevalier = makeUnit("k", "chevalier", 0, 0, 0, false);
+    const guerrier = makeUnit("g", "guerrier", 1, 0, 0, false);
+    const r = computeCombat(chevalier, guerrier, true);
+    expect(r.defenderDies).toBe(false); // survivant -> combat en plusieurs coups
+  });
+
+  it("une catapulte n'est plus « one-shot » par une autre (def 1 + 12 PV)", () => {
+    const cata = makeUnit("c", "catapulte", 0, 0, 0, false);
+    const target = makeUnit("c2", "catapulte", 1, 0, 0, false);
+    const r = computeCombat(cata, target, false); // tir à distance
+    expect(r.defenderDies).toBe(false);
+  });
+});
+
+describe("temps de production des grosses unités (#11)", () => {
+  /** Ville libre du joueur 0 + une ville au joueur 1 (pour qu'il ne soit pas éliminé). */
+  function twoCityState(stars: number, techs: string[]): GameState {
+    const s = freeCityState(stars);
+    s.players = s.players.map((p) => (p.id === 0 ? { ...p, unlockedTechs: techs } : p));
+    s.cities.push({ id: "c1", ownerId: 1, x: 0, y: 0, level: 1, population: 0, starsPerTurn: 2 });
+    s.tiles[tileIndex(5, 0, 0)]!.cityId = "c1";
+    s.tiles[tileIndex(5, 0, 0)]!.ownerId = 1;
+    return s;
+  }
+
+  it("paie tout de suite, occupe la ville, et ne fait rien apparaître", () => {
+    let s = twoCityState(20, ["strategie", "tactique"]); // débloque le géant
+    s = applyAction(s, { type: "TRAIN_UNIT", cityId: "c0", unitType: "geant" });
+    expect(s.players[0]!.stars).toBe(20 - UNIT_STATS.geant.cost);
+    expect(s.cities.find((c) => c.id === "c0")!.production).toEqual({
+      unitType: "geant",
+      turnsLeft: 2,
+    });
+    expect(s.units).toHaveLength(0);
+    // Ville occupée : impossible d'en relancer une (même un guerrier).
+    expect(isLegal(s, { type: "TRAIN_UNIT", cityId: "c0", unitType: "guerrier" })).toBe(false);
+  });
+
+  it("apparaît (actif) après 2 tours du propriétaire", () => {
+    let s = twoCityState(20, ["strategie", "tactique"]);
+    s = applyAction(s, { type: "TRAIN_UNIT", cityId: "c0", unitType: "geant" });
+
+    s = applyAction(s, { type: "END_TURN" }); // -> joueur 1
+    s = applyAction(s, { type: "END_TURN" }); // -> joueur 0 : 2 -> 1
+    expect(s.cities.find((c) => c.id === "c0")!.production!.turnsLeft).toBe(1);
+    expect(s.units).toHaveLength(0);
+
+    s = applyAction(s, { type: "END_TURN" }); // -> joueur 1
+    s = applyAction(s, { type: "END_TURN" }); // -> joueur 0 : 1 -> 0 -> apparition
+    const u = s.units.find((x) => x.type === "geant");
+    expect(u).toBeDefined();
+    expect(u!.ownerId).toBe(0);
+    expect(u!.hasMoved).toBe(false); // prêt à agir le tour de sa sortie
+    expect(s.cities.find((c) => c.id === "c0")!.production).toBeUndefined();
+  });
+
+  it("le chevalier (production 1 tour) sort plus vite que le géant", () => {
+    let s = twoCityState(20, ["equitation", "chevalerie"]);
+    s = applyAction(s, { type: "TRAIN_UNIT", cityId: "c0", unitType: "chevalier" });
+    expect(s.cities.find((c) => c.id === "c0")!.production!.turnsLeft).toBe(1);
+    s = applyAction(s, { type: "END_TURN" }); // -> joueur 1
+    s = applyAction(s, { type: "END_TURN" }); // -> joueur 0 : 1 -> 0 -> apparition
+    expect(s.units.find((x) => x.type === "chevalier")).toBeDefined();
+  });
+});
+
+describe("Sages mystérieux (Stan & Nico, #9)", () => {
+  it("generateMap place 2 sages sur la terre, espacés des départs", () => {
+    const { tiles, starts } = generateMap(123, 16, 16, 2);
+    const sages = tiles.filter((t) => t.sage);
+    expect(sages).toHaveLength(2);
+    expect(sages.map((s) => s.sage).sort()).toEqual(["Nico", "Stan"]);
+    const cheb = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+    const villages = tiles.filter((t) => t.village);
+    for (const s of sages) {
+      expect(s.terrain).toBe("champ"); // case vide dégagée
+      expect(s.resource).toBeUndefined();
+      expect(s.village).toBeFalsy();
+      for (const st of starts) expect(cheb(s, st)).toBeGreaterThanOrEqual(3);
+      for (const v of villages) expect(cheb(s, v)).toBeGreaterThanOrEqual(3);
+      for (const o of sages) if (o !== s) expect(cheb(s, o)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  /** Grille avec un sage en (3,3), une unité du joueur 0 adjacente, et 2 villes. */
+  function sageState(seed: number): GameState {
+    const s = gridState(6, 2);
+    s.seed = seed;
+    s.cities.push({ id: "c0", ownerId: 0, x: 1, y: 1, level: 1, population: 0, starsPerTurn: 2 });
+    s.tiles[tileIndex(6, 1, 1)]!.cityId = "c0";
+    s.tiles[tileIndex(6, 1, 1)]!.ownerId = 0;
+    s.cities.push({ id: "c1", ownerId: 1, x: 5, y: 5, level: 1, population: 0, starsPerTurn: 2 });
+    s.tiles[tileIndex(6, 5, 5)]!.cityId = "c1";
+    s.players = s.players.map((p) => (p.id === 0 ? { ...p, stars: 30 } : p));
+    s.tiles[tileIndex(6, 3, 3)]!.sage = "Stan";
+    activeWarrior(s, "u0", 0, 3, 4);
+    return s;
+  }
+
+  it("CONSULT_SAGE n'est légal qu'avec une unité adjacente", () => {
+    const s = sageState(1);
+    expect(isLegal(s, { type: "CONSULT_SAGE", at: { x: 3, y: 3 } })).toBe(true);
+    // case sans sage
+    expect(isLegal(s, { type: "CONSULT_SAGE", at: { x: 0, y: 0 } })).toBe(false);
+    // sage présent mais aucune unité adjacente
+    const lonely = sageState(1);
+    lonely.units = []; // plus aucune unité => personne pour consulter
+    expect(isLegal(lonely, { type: "CONSULT_SAGE", at: { x: 3, y: 3 } })).toBe(false);
+  });
+
+  it("garde le sage sur la carte, marque le joueur, et reste déterministe", () => {
+    const s = sageState(7);
+    const a = applyAction(s, { type: "CONSULT_SAGE", at: { x: 3, y: 3 } });
+    const b = applyAction(s, { type: "CONSULT_SAGE", at: { x: 3, y: 3 } });
+    const tile = a.tiles[tileIndex(6, 3, 3)]!;
+    expect(tile.sage).toBe("Stan"); // le sage RESTE
+    expect(tile.sageUsedBy).toEqual([0]); // joueur 0 marqué
+    expect(a.lastSage!.by).toBe(0);
+    expect(a.lastSage!.id).toBe("3,3@1#0");
+    expect(b.lastSage).toEqual(a.lastSage); // même seed/case/tour/joueur => même issue
+  });
+
+  it("un joueur ne peut consulter un sage qu'une fois ; un autre joueur le peut encore", () => {
+    const s = sageState(3);
+    const after = applyAction(s, { type: "CONSULT_SAGE", at: { x: 3, y: 3 } });
+    // Joueur 0 a consulté : illégal pour lui de recommencer.
+    expect(isLegal(after, { type: "CONSULT_SAGE", at: { x: 3, y: 3 } })).toBe(false);
+    // Mais pour le joueur 1 (avec une unité adjacente), c'est encore possible.
+    const j1 = { ...after, currentPlayer: 1 };
+    j1.units = [...j1.units, makeUnit("u1", "guerrier", 1, 3, 2, false)];
+    j1.tiles = j1.tiles.slice();
+    j1.tiles[tileIndex(6, 3, 2)] = { ...j1.tiles[tileIndex(6, 3, 2)]!, unitId: "u1" };
+    expect(isLegal(j1, { type: "CONSULT_SAGE", at: { x: 3, y: 3 } })).toBe(true);
+  });
+
+  it("applique un VRAI effet (bonus ou malus) selon le tirage, sur 30 seeds", () => {
+    let good = 0;
+    let bad = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const s = sageState(seed);
+      const before = s.players[0]!;
+      const beforeUnits = s.units.length;
+      const beforeTechs = before.unlockedTechs.length;
+      const n = applyAction(s, { type: "CONSULT_SAGE", at: { x: 3, y: 3 } });
+      const after = n.players[0]!;
+      const wallAdded = n.cities.some((c) => c.ownerId === 0 && c.hasWall);
+      if (n.lastSage!.good) {
+        good++;
+        const changed =
+          after.stars > before.stars ||
+          n.units.length > beforeUnits ||
+          after.unlockedTechs.length > beforeTechs ||
+          wallAdded;
+        expect(changed).toBe(true);
+      } else {
+        bad++;
+        const changed =
+          after.stars < before.stars ||
+          n.units.length < beforeUnits ||
+          after.skipIncome === true;
+        expect(changed).toBe(true);
+      }
+    }
+    expect(good).toBeGreaterThan(0);
+    expect(bad).toBeGreaterThan(0);
+  });
+
+  it("malus Disette : aucun revenu au prochain tour, puis revenu rétabli", () => {
+    let s = gridState(6, 2);
+    s.cities.push({ id: "c0", ownerId: 0, x: 1, y: 1, level: 2, population: 0, starsPerTurn: 3 });
+    s.tiles[tileIndex(6, 1, 1)]!.cityId = "c0";
+    s.cities.push({ id: "c1", ownerId: 1, x: 5, y: 5, level: 1, population: 0, starsPerTurn: 2 });
+    s.tiles[tileIndex(6, 5, 5)]!.cityId = "c1";
+    s.players = s.players.map((p) => (p.id === 0 ? { ...p, stars: 10, skipIncome: true } : p));
+
+    s = applyAction(s, { type: "END_TURN" }); // -> joueur 1
+    const before = s.players[0]!.stars;
+    s = applyAction(s, { type: "END_TURN" }); // -> joueur 0 : revenu SAUTÉ
+    expect(s.players[0]!.stars).toBe(before); // pas de +3
+    expect(s.players[0]!.skipIncome).toBe(false); // flag consommé
+
+    s = applyAction(s, { type: "END_TURN" }); // -> joueur 1
+    s = applyAction(s, { type: "END_TURN" }); // -> joueur 0 : revenu rétabli
+    expect(s.players[0]!.stars).toBe(before + 3);
   });
 });
