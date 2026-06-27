@@ -481,6 +481,9 @@ export function createGameServer(port = 3001, opts: GameServerOptions = {}): Pro
         rpgModeEnabled: !!s.rpgModeEnabled,
         wondersEnabled: !!s.wondersEnabled,
         navalCombatEnabled: !!s.navalCombatEnabled,
+        pacingMode: s.pacingMode ?? "normal",
+        customStartGold: s.customStartGold,
+        customTechCostMultiplier: s.customTechCostMultiplier,
       };
       broadcastLobby(lobby);
     });
@@ -495,14 +498,48 @@ export function createGameServer(port = 3001, opts: GameServerOptions = {}): Pro
       reassignIds(lobby);
       lobby.started = true;
       lobby.endVote = null;
+      let finalTurnLimit = lobby.settings.turnLimit;
+      let finalTurnSeconds = lobby.settings.turnSeconds;
+      let techMult = 1.0;
+      let startGold = 5;
+
+      if (lobby.settings.pacingMode === "blitz") {
+        finalTurnLimit = 30;
+        finalTurnSeconds = 45;
+        techMult = 0.7;
+        startGold = 15;
+      } else if (lobby.settings.pacingMode === "normal") {
+        finalTurnLimit = 60;
+        finalTurnSeconds = 90;
+        techMult = 1.0;
+        startGold = 5;
+      } else if (lobby.settings.pacingMode === "long") {
+        finalTurnLimit = null;
+        finalTurnSeconds = 180;
+        techMult = 1.2;
+        startGold = 5;
+      } else if (lobby.settings.pacingMode === "custom") {
+        techMult = lobby.settings.customTechCostMultiplier ?? 1.0;
+        startGold = lobby.settings.customStartGold ?? 5;
+      }
+
       const size = lobby.settings.mapSize ?? mapSizeForPlayers(lobby.players.length, lobby.settings.mapType);
       lobby.state = createInitialState({
         seed: Date.now() & 0xffffffff,
         width: size,
         height: size,
-        turnLimit: lobby.settings.turnLimit,
+        turnLimit: finalTurnLimit,
+        turnDurationMs: finalTurnSeconds ? finalTurnSeconds * 1000 : null,
+        pacingMode: lobby.settings.pacingMode,
+        techCostMultiplier: techMult,
+        customStartGold: startGold,
         mapType: lobby.settings.mapType,
         playerInfos: lobby.players.map((p) => ({ name: p.name, color: p.color, isAI: p.isAI })),
+        weatherEnabled: lobby.settings.weatherEnabled,
+        bossesEnabled: lobby.settings.bossesEnabled,
+        rpgModeEnabled: lobby.settings.rpgModeEnabled,
+        wondersEnabled: lobby.settings.wondersEnabled,
+        navalCombatEnabled: lobby.settings.navalCombatEnabled,
       });
       broadcastLobby(lobby);
       broadcastState(lobby);

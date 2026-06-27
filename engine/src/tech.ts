@@ -14,11 +14,12 @@ import {
 import type { Player } from "@polytopia/shared";
 
 /** Coût d'une tech selon son palier et le nombre de villes du joueur. */
-export function computeTechCost(tier: number, numCities: number, player?: Player): number {
+export function computeTechCost(state: GameState, tier: number, numCities: number, player?: Player): number {
   let cost = TECH_BASE_COST * tier + numCities;
   if (player?.culturalDoctrines?.includes("erudition")) {
     cost = Math.max(1, Math.floor(cost * 0.8));
   }
+  cost = Math.max(1, Math.floor(cost * (state.techCostMultiplier ?? 1.0)));
   return cost;
 }
 

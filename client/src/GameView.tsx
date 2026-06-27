@@ -226,6 +226,9 @@ export function GameView({
       setRemaining((r) => {
         if (r == null) return null;
         const next = Math.max(0, r - 1);
+        if (next > 0 && next <= 10 && state.currentPlayer === myId && !victory.over) {
+          AudioManger.playTick();
+        }
         return next;
       });
     }, 1000);
@@ -541,7 +544,7 @@ export function GameView({
         {me?.culture !== undefined && <span className="pill culture" title="Culture">🎭 {me.culture}</span>}
 
         {remaining != null && (
-          <span className={`pill timer${remaining <= 5 ? " low" : ""}`}>⏱ {remaining}s</span>
+          <span className={`pill timer${remaining <= 10 ? " low" : ""}`}>⏱ {remaining}s</span>
         )}
         <span className="spacer" />
         {canVoteEnd && !endVote && (

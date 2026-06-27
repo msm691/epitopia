@@ -38,6 +38,14 @@ export interface CreateStateOptions {
   wondersEnabled?: boolean;
   /** Activation des Batailles Navales Avancées. */
   navalCombatEnabled?: boolean;
+  /** Le rythme de la partie tel que défini dans les options */
+  pacingMode?: "blitz" | "normal" | "long" | "custom";
+  /** Durée allouée pour le tour courant en millisecondes. null = infini */
+  turnDurationMs?: number | null;
+  /** Multiplicateur du coût des technologies (ex: 1.0 = normal, 0.7 = blitz) */
+  techCostMultiplier?: number;
+  /** Or de départ (uniquement si pacingMode === "custom") */
+  customStartGold?: number;
 }
 
 export interface PlayerInfo {
@@ -165,6 +173,10 @@ export function createInitialState(options: CreateStateOptions): GameState {
     peaceProposals: [],
     builtWonders: [],
     turnLimit: options.turnLimit ?? DEFAULT_TURN_LIMIT,
+    turnDurationMs: options.turnDurationMs ?? null,
+    turnDeadline: null,
+    techCostMultiplier: options.techCostMultiplier ?? 1.0,
+    pacingMode: options.pacingMode ?? "normal",
     nextUnitId,
     nextCityId: players.length, // Commence après les capitales (1 par joueur)
     seed: options.seed,
@@ -176,6 +188,18 @@ export function createInitialState(options: CreateStateOptions): GameState {
     weather: (options.weatherEnabled ?? false) ? "normal" : undefined,
     windDirection: (options.weatherEnabled ?? false) ? { dx: 1, dy: 0 } : undefined,
   };
+
+  // Adjust starting gold based on pacing
+  for (const player of state.players) {
+    if (player.civName === "Barbares") continue;
+    if (state.pacingMode === "blitz") {
+      player.stars = 15;
+    } else if (state.pacingMode === "custom" && options.customStartGold !== undefined) {
+      player.stars = options.customStartGold;
+    }
+  }
+
+  return state;
 }
 
 export function areAllies(state: GameState, p1: number, p2: number): boolean {

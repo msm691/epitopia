@@ -242,63 +242,154 @@ export function App() {
         {/* Réglages de la partie */}
         <div className="settings">
           <h2>⚙️ Réglages</h2>
+
           <div className="setting">
-            <span className="setting-label">🏁 Limite de tours</span>
-            <div className="setting-ctrl">
-              <div className="seg">
-                <button
-                  className={`seg-btn${lobby.settings.turnLimit !== null ? " active" : ""}`}
-                  disabled={!isHost}
-                  onClick={() => updateSettings({ turnLimit: 30 })}
-                >
-                  Limité
-                </button>
-                <button
-                  className={`seg-btn${lobby.settings.turnLimit === null ? " active" : ""}`}
-                  disabled={!isHost}
-                  onClick={() => updateSettings({ turnLimit: null })}
-                >
-                  Illimité
-                </button>
+            <span className="setting-label">⏱️ Rythme de jeu</span>
+            <div className="seg wrap">
+              <button
+                className={`seg-btn${lobby.settings.pacingMode === "blitz" ? " active" : ""}`}
+                disabled={!isHost}
+                onClick={() => updateSettings({ pacingMode: "blitz" })}
+              >
+                ⚡ Blitz
+              </button>
+              <button
+                className={`seg-btn${lobby.settings.pacingMode === "normal" ? " active" : ""}`}
+                disabled={!isHost}
+                onClick={() => updateSettings({ pacingMode: "normal" })}
+              >
+                ⚖️ Normal
+              </button>
+              <button
+                className={`seg-btn${lobby.settings.pacingMode === "long" ? " active" : ""}`}
+                disabled={!isHost}
+                onClick={() => updateSettings({ pacingMode: "long" })}
+              >
+                🕰️ Long
+              </button>
+              <button
+                className={`seg-btn${lobby.settings.pacingMode === "custom" ? " active" : ""}`}
+                disabled={!isHost}
+                onClick={() => updateSettings({ pacingMode: "custom" })}
+              >
+                ⚙️ Perso
+              </button>
+            </div>
+          </div>
+
+          {lobby.settings.pacingMode === "custom" && (
+            <div className="custom-settings-panel" style={{ background: "rgba(0,0,0,0.2)", padding: "1rem", borderRadius: "8px", marginBottom: "1rem" }}>
+              <h3 style={{ marginTop: 0 }}>Règles Personnalisées</h3>
+              <div className="setting">
+                <span className="setting-label">🏁 Limite de tours</span>
+                <div className="setting-ctrl">
+                  <div className="seg">
+                    <button
+                      className={`seg-btn${lobby.settings.turnLimit !== null ? " active" : ""}`}
+                      disabled={!isHost}
+                      onClick={() => updateSettings({ turnLimit: 30 })}
+                    >
+                      Limité
+                    </button>
+                    <button
+                      className={`seg-btn${lobby.settings.turnLimit === null ? " active" : ""}`}
+                      disabled={!isHost}
+                      onClick={() => updateSettings({ turnLimit: null })}
+                    >
+                      Illimité
+                    </button>
+                  </div>
+                  {lobby.settings.turnLimit !== null && (
+                    <div className="stepper">
+                      <button
+                        disabled={!isHost}
+                        onClick={() =>
+                          updateSettings({ turnLimit: Math.max(5, (lobby.settings.turnLimit ?? 30) - 5) })
+                        }
+                      >
+                        −
+                      </button>
+                      <span>{lobby.settings.turnLimit} tours</span>
+                      <button
+                        disabled={!isHost}
+                        onClick={() =>
+                          updateSettings({ turnLimit: (lobby.settings.turnLimit ?? 30) + 5 })
+                        }
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-              {lobby.settings.turnLimit !== null && (
+              
+              <div className="setting">
+                <span className="setting-label">⏱️ Temps par tour</span>
+                <div className="seg wrap">
+                  {TURN_SECONDS_PRESETS.map((p) => (
+                    <button
+                      key={p.label}
+                      className={`seg-btn${lobby.settings.turnSeconds === p.value ? " active" : ""}`}
+                      disabled={!isHost}
+                      onClick={() => updateSettings({ turnSeconds: p.value })}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="setting">
+                <span className="setting-label">💰 Or de départ</span>
                 <div className="stepper">
                   <button
                     disabled={!isHost}
                     onClick={() =>
-                      updateSettings({ turnLimit: Math.max(5, (lobby.settings.turnLimit ?? 30) - 5) })
+                      updateSettings({ customStartGold: Math.max(0, (lobby.settings.customStartGold ?? 5) - 5) })
                     }
                   >
                     −
                   </button>
-                  <span>{lobby.settings.turnLimit} tours</span>
+                  <span>{lobby.settings.customStartGold ?? 5} ⭐</span>
                   <button
                     disabled={!isHost}
                     onClick={() =>
-                      updateSettings({ turnLimit: (lobby.settings.turnLimit ?? 30) + 5 })
+                      updateSettings({ customStartGold: (lobby.settings.customStartGold ?? 5) + 5 })
                     }
                   >
                     +
                   </button>
                 </div>
-              )}
+              </div>
+
+              <div className="setting">
+                <span className="setting-label">🔬 Coût des Techs</span>
+                <div className="seg wrap">
+                  <button
+                    className={`seg-btn${lobby.settings.customTechCostMultiplier === 0.7 ? " active" : ""}`}
+                    disabled={!isHost}
+                    onClick={() => updateSettings({ customTechCostMultiplier: 0.7 })}
+                  >
+                    Rapide (x0.7)
+                  </button>
+                  <button
+                    className={`seg-btn${(lobby.settings.customTechCostMultiplier ?? 1.0) === 1.0 ? " active" : ""}`}
+                    disabled={!isHost}
+                    onClick={() => updateSettings({ customTechCostMultiplier: 1.0 })}
+                  >
+                    Normal (x1.0)
+                  </button>
+                  <button
+                    className={`seg-btn${lobby.settings.customTechCostMultiplier === 1.2 ? " active" : ""}`}
+                    disabled={!isHost}
+                    onClick={() => updateSettings({ customTechCostMultiplier: 1.2 })}
+                  >
+                    Lent (x1.2)
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="setting">
-            <span className="setting-label">⏱️ Temps par tour</span>
-            <div className="seg wrap">
-              {TURN_SECONDS_PRESETS.map((p) => (
-                <button
-                  key={p.label}
-                  className={`seg-btn${lobby.settings.turnSeconds === p.value ? " active" : ""}`}
-                  disabled={!isHost}
-                  onClick={() => updateSettings({ turnSeconds: p.value })}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
           <div className="setting">
             <span className="setting-label">🗺️ Taille de carte</span>
             <div className="seg wrap">

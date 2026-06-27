@@ -215,6 +215,14 @@ export interface GameState {
   builtWonders: { type: ImprovementType; ownerId: PlayerId }[];
   /** Tour limite déclenchant la victoire au score ; null = partie illimitée. */
   turnLimit: number | null;
+  /** Durée allouée pour le tour courant en millisecondes. null = infini */
+  turnDurationMs: number | null;
+  /** Timestamp de la fin du tour courant (géré par le serveur). null = infini */
+  turnDeadline: number | null;
+  /** Multiplicateur du coût des technologies (ex: 1.0 = normal, 0.7 = blitz) */
+  techCostMultiplier: number;
+  /** Le rythme de la partie tel que défini dans les options */
+  pacingMode: "blitz" | "normal" | "long" | "custom";
   /** Compteur déterministe pour générer des id d'unités uniques. */
   nextUnitId: number;
   /** Compteur déterministe pour générer des id de villes fondées (hors capitales). */

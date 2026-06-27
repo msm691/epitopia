@@ -13,6 +13,12 @@ export interface GameSettings {
   turnLimit: number | null;
   /** Temps maximum par tour et par joueur, en secondes ; null = pas de limite. */
   turnSeconds: number | null;
+  /** Rythme de jeu (presets ou custom) */
+  pacingMode: "blitz" | "normal" | "long" | "custom";
+  /** Or de départ (uniquement si pacingMode === "custom") */
+  customStartGold?: number;
+  /** Multiplicateur de coût des technologies (uniquement si pacingMode === "custom") */
+  customTechCostMultiplier?: number;
   /** Taille de carte forcée ; null = automatique selon le nombre de joueurs. */
   mapSize: number | null;
   /** Type de carte (proportion terre/eau). */

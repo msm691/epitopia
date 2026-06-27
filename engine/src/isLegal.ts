@@ -312,7 +312,7 @@ function isLegalResearch(state: GameState, action: ResearchTechAction): boolean 
   if (tech.requires && !playerHasTech(state, playerId, tech.requires)) return false;
 
   // Assez d'étoiles (coût fonction du palier + nb de villes).
-  const cost = computeTechCost(tech.tier, getPlayerCityCount(state, playerId));
+  const cost = computeTechCost(state, tech.tier, getPlayerCityCount(state, playerId), player);
   if (player.stars < cost) return false;
 
   return true;

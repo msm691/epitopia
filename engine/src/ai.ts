@@ -370,7 +370,7 @@ export function nextAIAction(state: GameState, pid: PlayerId): Action {
   for (const tech of Object.values(TECHS)) {
     const action: Action = { type: "RESEARCH_TECH", techId: tech.id };
     if (!isLegal(state, action)) continue;
-    const cost = computeTechCost(tech.tier, cityCount);
+    const cost = computeTechCost(state, tech.tier, cityCount);
     if (cost < bestTechCost) {
       bestTechCost = cost;
       bestTech = action;

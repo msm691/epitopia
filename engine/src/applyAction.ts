@@ -441,7 +441,7 @@ function researchTech(state: GameState, action: ResearchTechAction): GameState {
   const player = state.players.find(p => p.id === playerId);
   const cityCount = getPlayerCityCount(state, playerId);
   const tech = getTech(action.techId)!;
-  const cost = computeTechCost(tech.tier, cityCount, player);
+  const cost = computeTechCost(state, tech.tier, cityCount, player);
 
   const players = state.players.map((p) =>
     p.id === playerId

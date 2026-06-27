@@ -24,6 +24,7 @@ export const DEFAULT_GAME_SETTINGS: import("./protocol.js").GameSettings = {
   rpgModeEnabled: false,
   wondersEnabled: false,
   navalCombatEnabled: false,
+  pacingMode: "normal",
 };
 
 /** Types de carte proposés dans les réglages (lobby). */
