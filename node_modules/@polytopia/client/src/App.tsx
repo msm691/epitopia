@@ -60,12 +60,7 @@ export function App() {
     });
   };
 
-  // Auto-reconnect if we already have a name in local storage
-  useEffect(() => {
-    if (name.trim()) {
-      handleConnect();
-    }
-  }, []);
+  // Remove auto-reconnect on load so user must click "Jouer en ligne" explicitly.
 
   useEffect(() => {
     return () => {
