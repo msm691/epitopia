@@ -2,6 +2,9 @@
 title EPITOPIA PAS TOUCHER
 color 4F
 
+:: Force le script a aller dans le bon dossier, peu importe ou il est place
+cd /d "C:\Users\Administrateur\Desktop\epitopia"
+
 echo === 1. Mise a jour du code ===
 git pull origin main
 
