@@ -69,9 +69,10 @@ function Peak({ x, z, top }: { x: number; z: number; top: number }) {
 }
 
 /** L'île qui tourne lentement (colonnes de terre + décor). */
-function Island() {
+function Island({ perfMode }: { perfMode?: boolean }) {
   const ref = useRef<THREE.Group>(null);
   useFrame((_, dt) => {
+    if (perfMode) return;
     if (ref.current) ref.current.rotation.y += dt * 0.08;
   });
 
@@ -125,13 +126,14 @@ function Island() {
 }
 
 /** Mer animée (vagues douces) entourant l'île. */
-function Sea() {
+function Sea({ perfMode }: { perfMode?: boolean }) {
   const geo = useMemo(() => new THREE.PlaneGeometry(60, 60, 40, 40), []);
   const original = useMemo(
     () => (geo.attributes.position ? Float32Array.from(geo.attributes.position.array) : new Float32Array(0)),
     [geo],
   );
   useFrame(({ clock }) => {
+    if (perfMode) return;
     const pos = geo.attributes.position;
     if (!pos) return;
     const t = clock.elapsedTime;
@@ -158,9 +160,10 @@ function Sea() {
 }
 
 /** Quelques nuages qui dérivent. */
-function Clouds() {
+function Clouds({ perfMode }: { perfMode?: boolean }) {
   const ref = useRef<THREE.Group>(null);
   useFrame(({ clock }) => {
+    if (perfMode) return;
     const g = ref.current;
     if (g) g.position.x = Math.sin(clock.elapsedTime * 0.05) * 2;
   });
@@ -260,13 +263,15 @@ export function MenuBackground({ perfMode }: { perfMode?: boolean }) {
         <hemisphereLight args={["#ffd9a8", "#5a4b6e", 0.6]} />
         <directionalLight color="#ffb877" position={[-8, 4, -10]} intensity={1.5} />
         <directionalLight color="#8aa0d6" position={[8, 6, 8]} intensity={0.4} />
-        <Environment resolution={64} environmentIntensity={0.55}>
-          <Lightformer intensity={1.6} color="#ffd9a0" position={[-9, 3, -12]} scale={[14, 10, 1]} />
-          <Lightformer intensity={0.5} color="#9fb6ec" position={[10, 8, 6]} scale={[12, 12, 1]} />
-        </Environment>
-        <Island />
-        <Sea />
-        <Clouds />
+        {!perfMode && (
+          <Environment resolution={64} environmentIntensity={0.55}>
+            <Lightformer intensity={1.6} color="#ffd9a0" position={[-9, 3, -12]} scale={[14, 10, 1]} />
+            <Lightformer intensity={0.5} color="#9fb6ec" position={[10, 8, 6]} scale={[12, 12, 1]} />
+          </Environment>
+        )}
+        <Island perfMode={perfMode} />
+        <Sea perfMode={perfMode} />
+        <Clouds perfMode={perfMode} />
         {!perfMode && (
           <EffectComposer>
             <Bloom intensity={0.9} luminanceThreshold={0.6} luminanceSmoothing={0.3} mipmapBlur />

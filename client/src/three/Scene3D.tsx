@@ -389,17 +389,19 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
 
       {/* Environment map PROCÉDURALE (offline, pas de téléchargement) : donne des
           reflets/une lumière douce aux matériaux PBR des modèles. Faible coût. */}
-      <Environment resolution={64} environmentIntensity={0.5}>
-        <Lightformer intensity={1.3} color="#fff3d6" position={[10, 10, 6]} scale={[12, 12, 1]} />
-        <Lightformer intensity={0.6} color="#cfe6fb" position={[-10, 6, -6]} scale={[12, 12, 1]} />
-        <Lightformer
-          intensity={0.35}
-          color="#6f8a55"
-          position={[0, -6, 0]}
-          rotation={[Math.PI / 2, 0, 0]}
-          scale={[14, 14, 1]}
-        />
-      </Environment>
+      {!perfMode && (
+        <Environment resolution={64} environmentIntensity={0.5}>
+          <Lightformer intensity={1.3} color="#fff3d6" position={[10, 10, 6]} scale={[12, 12, 1]} />
+          <Lightformer intensity={0.6} color="#cfe6fb" position={[-10, 6, -6]} scale={[12, 12, 1]} />
+          <Lightformer
+            intensity={0.35}
+            color="#6f8a55"
+            position={[0, -6, 0]}
+            rotation={[Math.PI / 2, 0, 0]}
+            scale={[14, 14, 1]}
+          />
+        </Environment>
+      )}
 
       {/* Éclairage cartoon : soleil chaud + ciel/ambiance doux (réduits car
           l'environment apporte déjà de l'ambiance) */}
@@ -421,7 +423,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         shadow-camera-far={80}
       />
 
-      <Water size={span} y={WATER_SURFACE_Y} onPick={handleWaterPick} />
+      <Water size={span} y={WATER_SURFACE_Y} onPick={handleWaterPick} perfMode={perfMode} />
       <WaterPickLayer state={state} onPick={handlePick} />
       <Terrain state={state} onPick={handlePick} />
       <Resources state={state} />
