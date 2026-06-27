@@ -1,8 +1,9 @@
 <div align="center">
   <h1>👑 Epitopia</h1>
+  <h2><a href="http://epitopia.fr">🔴 JOUER MAINTENANT SUR NOTRE SITE OFFICIEL : HTTP://EPITOPIA.FR 🔴</a></h2>
   <p><b>Jeu de stratégie 4X Multijoueur au tour par tour, jouable directement sur navigateur !</b></p>
   
-  [![Jouer à Epitopia](https://img.shields.io/badge/Jouer%20maintenant%20sur-epitopia.fr-blue?style=for-the-badge&logo=google-chrome)](https://epitopia.fr)
+  [![Jouer à Epitopia](https://img.shields.io/badge/Jouer%20maintenant%20sur-epitopia.fr-blue?style=for-the-badge&logo=google-chrome)](http://epitopia.fr)
 </div>
 
 ---
@@ -89,5 +90,5 @@ Epitopia est conçu pour tourner très facilement.
 
 <div align="center">
   <b>Développé avec ❤️ pour la communauté de stratégie.</b><br>
-  👉 <a href="https://epitopia.fr">Rejoignez l'aventure sur epitopia.fr</a>
+  👉 <a href="http://epitopia.fr">Rejoignez l'aventure sur http://epitopia.fr</a>
 </div>
