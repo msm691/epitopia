@@ -21,3 +21,5 @@ console.log("Player 0 stars:", state.players[0].stars);
 console.log("Player 1 stars:", state.players[1].stars);
 console.log("Player 2 stars:", state.players[2].stars); // Barbarians
 console.log("City count:", state.cities.length);
+console.log("Tiles count:", state.tiles.length);
+console.log("Width:", state.width, "Height:", state.height);

@@ -476,7 +476,11 @@ export function GameView({
   }, [state, myId]);
 
   return (
-    <div className="game">
+    <div className="game-layout">
+      <div style={{ position: "absolute", top: 100, left: 50, background: "red", zIndex: 9999, color: "white", padding: "10px" }}>
+        DEBUG: {state.width}x{state.height} tiles:{state.tiles?.length}
+      </div>
+      {/* HUD (UI par-dessus la 3D) */}
       {/* Carte plein écran (rendu 3D) — clic droit réservé à la rotation caméra */}
       <div className="viewport" onContextMenu={(e) => e.preventDefault()}>
         <Scene3D
@@ -1328,7 +1332,7 @@ function TechTree({ state, me, cityCount, canResearch, onResearch, onClose }: Te
 
   const node = (tech: TechDef) => {
     const owned = owns(tech.id);
-    const cost = computeTechCost(tech.tier, cityCount, player);
+    const cost = computeTechCost(state, tech.tier, cityCount, player);
     const prereqMet = !tech.requires || owns(tech.requires);
     const affordable = stars >= cost;
     const legal = canResearch && isLegal(state, { type: "RESEARCH_TECH", techId: tech.id });
