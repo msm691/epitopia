@@ -13,21 +13,6 @@ import type {
   TechDef,
 } from "@polytopia/shared";
 
-declare global {
-  interface Window { lastErr?: string; }
-}
-if (!window.lastErr) {
-  window.lastErr = "";
-  const oldError = console.error;
-  console.error = (...args) => {
-    window.lastErr += args.join(" ") + "\n";
-    oldError(...args);
-  };
-  window.addEventListener("error", (e) => {
-    window.lastErr += String(e.error?.stack || e.message) + "\n";
-  });
-}
-
 import {
   TECHS,
   UNIT_STATS,
@@ -493,10 +478,6 @@ export function GameView({
 
   return (
     <div className="game-layout">
-      <div style={{ position: "absolute", top: 100, left: 50, background: "red", zIndex: 9999, color: "white", padding: "10px", whiteSpace: "pre-wrap", maxWidth: "800px" }}>
-        DEBUG: {state.width}x{state.height} tiles:{state.tiles?.length}
-        <br/>ERRORS: {window.lastErr}
-      </div>
       {/* HUD (UI par-dessus la 3D) */}
       {/* Carte plein écran (rendu 3D) — clic droit réservé à la rotation caméra */}
       <div className="viewport" onContextMenu={(e) => e.preventDefault()}>

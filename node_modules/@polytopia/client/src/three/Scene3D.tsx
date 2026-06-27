@@ -116,6 +116,7 @@ function HighlightPlanes({
   lift = 0.016,
   size = 0.92,
   pulse = 0.18,
+  perfMode,
 }: {
   state: GameState;
   cells: readonly Coord[] | undefined;
@@ -173,6 +174,7 @@ function RegionOutline({
   cells,
   color,
   lift = 0.02,
+  perfMode,
 }: {
   state: GameState;
   cells: readonly Coord[] | undefined;
