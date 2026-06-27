@@ -53,7 +53,7 @@ export function App() {
   // Auto-reconnect if we already have a name in local storage
   useEffect(() => {
     if (name.trim()) {
-      connectToServer();
+      handleConnect();
     }
   }, []);
 
