@@ -17,9 +17,11 @@ export interface WaterProps {
   y: number;
   /** Clic sur l'eau -> point monde (pour retrouver la case). */
   onPick: (e: ThreeEvent<MouseEvent>) => void;
+  /** Mode performance : fige l'eau. */
+  perfMode?: boolean;
 }
 
-export function Water({ size, y, onPick }: WaterProps) {
+export function Water({ size, y, onPick, perfMode }: WaterProps) {
   // Densité de vagues proportionnelle à la taille (les vagues ont une longueur
   // d'onde fixe en unités monde -> il faut plus de segments quand le plan grandit).
   const seg = Math.min(72, Math.max(24, Math.round(size / 1.6)));
@@ -30,6 +32,7 @@ export function Water({ size, y, onPick }: WaterProps) {
   }, [geo]);
 
   useFrame(({ clock }) => {
+    if (perfMode) return; // Désactive l'animation CPU-intensive en mode perf
     const pos = geo.attributes.position;
     if (!pos) return;
     const t = clock.elapsedTime;
@@ -44,7 +47,7 @@ export function Water({ size, y, onPick }: WaterProps) {
   });
 
   return (
-    <mesh geometry={geo} position={[0, y, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={onPick}>
+    <mesh geometry={geo} position={[0, y, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow={!perfMode} onClick={onPick}>
       <meshStandardMaterial
         color={WATER_COLOR}
         flatShading

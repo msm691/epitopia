@@ -47,8 +47,13 @@ export const AudioManger = {
     setTimeout(() => playTone(659, 'sine', 0.3, 0.2), 200);
   },
   playMove: () => {
+    if (AudioManger.muted) return;
     // Petit clic / pas
     playTone(300, 'triangle', 0.05, 0.1);
+  },
+  playTick: () => {
+    if (AudioManger.muted) return;
+    playTone(800, 'sine', 0.05, 0.05);
   },
   playBgm: () => {
     // On lance la vraie musique Howler

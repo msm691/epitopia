@@ -114,6 +114,30 @@ export interface UpgradeHeroAction {
   skillId: string;
 }
 
+export interface SabotageWallAction {
+  type: "SABOTAGE_WALL";
+  unitId: string; // The espion
+  cityId: string; // The target city
+}
+
+export interface StealTechAction {
+  type: "STEAL_TECH";
+  unitId: string; // The espion
+  cityId: string; // The target city
+}
+
+export interface PoisonCityAction {
+  type: "POISON_CITY";
+  unitId: string; // The espion
+  cityId: string; // The target city
+}
+
+export interface EstablishTradeRouteAction {
+  type: "ESTABLISH_TRADE_ROUTE";
+  unitId: string; // The caravane
+  cityId: string; // The target allied city
+}
+
 /** Union de toutes les actions possibles. */
 export type Action =
   | MoveUnitAction
@@ -133,6 +157,10 @@ export type Action =
   | BreakPeaceAction
   | ExploreRuinAction
   | AdoptDoctrineAction
+  | SabotageWallAction
+  | StealTechAction
+  | PoisonCityAction
+  | EstablishTradeRouteAction
   | BuildRoadAction
   | UpgradeHeroAction;
 

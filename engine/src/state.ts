@@ -160,7 +160,7 @@ export function createInitialState(options: CreateStateOptions): GameState {
     }
   });
 
-  return {
+  const state: GameState = {
     width,
     height,
     tiles,
