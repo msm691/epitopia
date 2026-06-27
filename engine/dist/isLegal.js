@@ -4,9 +4,11 @@
  * Implémentées à l'Étape 1 : END_TURN, TRAIN_UNIT, MOVE_UNIT.
  * Les autres (combat, ville, tech, récolte) arrivent aux étapes suivantes.
  */
-import { ALL_CITY_REWARDS, ALL_IMPROVEMENTS, AUTO_TERRITORY_EXPANSIONS, CITY_HARVEST_RADIUS, improvementCost, MAX_HARVEST_RADIUS, MAX_WORKSHOPS, NAVAL_MOVEMENT, RESOURCE_HARVEST_COST, UNIT_STATS, unitBuildTurns, } from "@polytopia/shared";
+import { ALL_CITY_REWARDS, ALL_IMPROVEMENTS, AUTO_TERRITORY_EXPANSIONS, CITY_HARVEST_RADIUS, improvementCost, MAX_HARVEST_RADIUS, MAX_WORKSHOPS, NAVAL_MOVEMENT, RESOURCE_HARVEST_COST, UNIT_STATS, unitBuildTurns, DOCTRINES, } from "@polytopia/shared";
+import { hasContinuousRoad } from "./pathfinding.js";
 import { canEnterTile, chebyshev, freeSpawnTileFor, isWaterAt, tileAt, unitById } from "./units.js";
 import { computeTechCost, getPlayerCityCount, getTech, playerCanHarvest, playerCanTrain, playerHasTech, } from "./tech.js";
+import { areAllies } from "./state.js";
 export function isLegal(state, action) {
     switch (action.type) {
         case "END_TURN":
@@ -33,7 +35,82 @@ export function isLegal(state, action) {
             return isLegalAttackWall(state, action);
         case "CONSULT_SAGE":
             return isLegalConsultSage(state, action);
+        case "PROPOSE_PEACE":
+            return isLegalProposePeace(state, action);
+        case "ACCEPT_PEACE":
+            return isLegalAcceptPeace(state, action);
+        case "BREAK_PEACE":
+            return isLegalBreakPeace(state, action);
+        case "EXPLORE_RUIN":
+            return isLegalExploreRuin(state, action);
+        case "ADOPT_DOCTRINE":
+            return isLegalAdoptDoctrine(state, action);
+        case "BUILD_ROAD":
+            return isLegalBuildRoad(state, action);
+        case "UPGRADE_HERO":
+            return isLegalUpgradeHero(state, action);
+        default:
+            return false;
     }
+}
+function isLegalBuildRoad(state, action) {
+    const unit = unitById(state, action.unitId);
+    if (!unit)
+        return false;
+    if (unit.ownerId !== state.currentPlayer)
+        return false;
+    const tile = tileAt(state, unit.x, unit.y);
+    if (!tile || tile.hasRoad || isWaterAt(state, unit.x, unit.y))
+        return false;
+    const player = state.players[state.currentPlayer];
+    if (!player || player.stars < 1)
+        return false;
+    return true;
+}
+function isLegalUpgradeHero(state, action) {
+    const unit = unitById(state, action.unitId);
+    if (!unit || unit.ownerId !== state.currentPlayer || !unit.isHero)
+        return false;
+    return true; // Simplifié pour le moment
+}
+function isLegalAdoptDoctrine(state, action) {
+    const player = state.players[state.currentPlayer];
+    if (!player)
+        return false;
+    if (player.culturalDoctrines?.includes(action.doctrineId))
+        return false; // Already adopted
+    const doctrine = DOCTRINES[action.doctrineId];
+    if (!doctrine)
+        return false;
+    if ((player.culture ?? 0) < doctrine.cost)
+        return false;
+    return true;
+}
+function isLegalProposePeace(state, action) {
+    if (state.currentPlayer === action.to)
+        return false;
+    if (!state.players[action.to])
+        return false;
+    if (areAllies(state, state.currentPlayer, action.to))
+        return false;
+    if (state.peaceProposals.some(p => p.from === state.currentPlayer && p.to === action.to))
+        return false;
+    return true;
+}
+function isLegalAcceptPeace(state, action) {
+    return state.peaceProposals.some(p => p.from === action.with && p.to === state.currentPlayer);
+}
+function isLegalBreakPeace(state, action) {
+    return areAllies(state, state.currentPlayer, action.with);
+}
+function isLegalExploreRuin(state, action) {
+    const unit = unitById(state, action.unitId);
+    if (!unit || unit.ownerId !== state.currentPlayer || unit.hasMoved)
+        return false;
+    const tile = tileAt(state, unit.x, unit.y);
+    if (!tile || !tile.ruin)
+        return false;
+    return true;
 }
 /** Consulter un sage : la case porte un sage, et une unité du joueur courant est adjacente. */
 function isLegalConsultSage(state, action) {
@@ -59,13 +136,18 @@ function isLegalBuildImprovement(state, action) {
     const player = state.players[state.currentPlayer];
     if (!player)
         return false;
-    if (player.stars < improvementCost(action.improvement, city.builtWorkshops ?? 0))
+    if (player.stars < improvementCost(action.improvement, city.builtWorkshops ?? 0, player))
         return false;
     // Plafonds : un seul rempart, et un nombre limité d'ateliers.
     if (action.improvement === "muraille" && city.hasWall)
         return false;
     if (action.improvement === "atelier" && (city.workshops ?? 0) >= MAX_WORKSHOPS)
         return false;
+    // Merveilles : une seule fois par partie (tous joueurs confondus)
+    if (action.improvement === "pyramides" || action.improvement === "colosse") {
+        if (state.builtWonders.some(w => w.type === action.improvement))
+            return false;
+    }
     return true;
 }
 /** Attaquer le rempart d'une ville ennemie : unité du joueur, à portée, rempart debout. */
@@ -82,6 +164,8 @@ function isLegalAttackWall(state, action) {
         return false;
     if (city.ownerId === attacker.ownerId)
         return false; // doit être ennemie
+    if (areAllies(state, attacker.ownerId, city.ownerId))
+        return false; // ne pas attaquer un allié
     if ((city.wallHp ?? 0) <= 0)
         return false; // pas de rempart à abattre
     // À portée d'attaque (Chebyshev jusqu'à la case-ville).
@@ -184,6 +268,8 @@ function isLegalAttack(state, action) {
     // La cible doit être ennemie.
     if (target.ownerId === attacker.ownerId)
         return false;
+    if (areAllies(state, attacker.ownerId, target.ownerId))
+        return false;
     // À portée d'attaque (Chebyshev).
     if (chebyshev(attacker, target) > attacker.range)
         return false;
@@ -204,6 +290,8 @@ function isLegalCapture(state, action) {
         return false;
     if (city.ownerId === unit.ownerId)
         return false;
+    if (areAllies(state, unit.ownerId, city.ownerId))
+        return false;
     // Un rempart intact doit d'abord être détruit (sécurité ; le mouvement l'empêche déjà).
     if ((city.wallHp ?? 0) > 0)
         return false;
@@ -222,10 +310,16 @@ function isLegalTrain(state, action) {
     // Une ville déjà en production est occupée (une unité à la fois).
     if (city.production)
         return false;
-    // Assez d'étoiles ?
     const player = state.players[state.currentPlayer];
     if (!player)
         return false;
+    // Un seul héros par joueur, ne peut être ressuscité
+    if (action.unitType === "hero") {
+        if (player.heroStatus === "alive" || player.heroStatus === "dead") {
+            return false;
+        }
+    }
+    // Assez d'étoiles ?
     if (player.stars < UNIT_STATS[action.unitType].cost)
         return false;
     // Unité immédiate : la case de la ville doit être libre (pas d'empilement).
@@ -235,6 +329,14 @@ function isLegalTrain(state, action) {
         const tile = tileAt(state, city.x, city.y);
         if (!tile || tile.unitId !== undefined)
             return false;
+    }
+    // Ressources stratégiques
+    const stratRes = player.strategicResources ?? [];
+    if ((action.unitType === "epeiste" || action.unitType === "catapulte") && !stratRes.includes("fer")) {
+        return false;
+    }
+    if ((action.unitType === "cavalier" || action.unitType === "chevalier") && !stratRes.includes("chevaux")) {
+        return false;
     }
     return true;
 }
@@ -257,9 +359,15 @@ function isLegalMove(state, action) {
     // embarquer depuis la terre coûte un déplacement terrestre normal (1 case).
     const canNavigate = playerHasTech(state, unit.ownerId, "navigation");
     const naval = isWaterAt(state, from.x, from.y);
-    const reach = naval ? Math.max(unit.movement, NAVAL_MOVEMENT) : unit.movement;
-    if (chebyshev(from, to) > reach)
-        return false;
+    let reach = naval ? Math.max(unit.movement, NAVAL_MOVEMENT) : unit.movement;
+    if (chebyshev(from, to) > reach) {
+        if (!naval && hasContinuousRoad(state, from, to, reach * 2)) {
+            reach *= 2;
+        }
+        else {
+            return false;
+        }
+    }
     // Case d'arrivée franchissable (terre, ou eau si Navigation ; et libre).
     if (!canEnterTile(state, to.x, to.y, canNavigate))
         return false;

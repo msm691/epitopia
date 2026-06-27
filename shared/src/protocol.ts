@@ -31,6 +31,14 @@ export interface EndVoteState {
   humans: number;
 }
 
+/** Un message du chat (joueur ou système). */
+export interface ChatMessage {
+  id: string;
+  senderId?: PlayerId; // undefined = système
+  text: string;
+  timestamp: number;
+}
+
 /** Un joueur tel que vu dans le lobby (avant/pendant la partie). */
 export interface LobbyPlayer {
   id: number;
@@ -41,6 +49,10 @@ export interface LobbyPlayer {
 }
 
 export interface LobbyState {
+  /** Identifiant unique du lobby. */
+  id: string;
+  /** Nom du lobby. */
+  name: string;
   players: LobbyPlayer[];
   /** Id de l'hôte (celui qui peut lancer la partie). */
   hostId: number | null;
@@ -50,28 +62,63 @@ export interface LobbyState {
   settings: GameSettings;
 }
 
+export interface LobbyInfo {
+  id: string;
+  name: string;
+  hasPassword: boolean;
+  currentPlayers: number;
+  maxPlayers: number;
+  started: boolean;
+}
+
 export interface JoinPayload {
   name: string;
-  /** La couleur est désormais attribuée par le serveur (aléatoire + unique). */
+  /** Token de session généré par le client, utilisé pour la reconnexion. */
+  sessionId: string;
+}
+
+export interface CreateLobbyPayload {
+  name: string;
+  password?: string | undefined;
+}
+
+export interface JoinLobbyPayload {
+  lobbyId: string;
+  password?: string | undefined;
 }
 
 /** Événements émis par le serveur vers les clients. */
 export interface ServerToClientEvents {
+  /** Liste des lobbys disponibles envoyée lors de la connexion. */
+  lobbiesList: (lobbies: LobbyInfo[]) => void;
+  /** Le joueur a rejoint ou créé avec succès un lobby. */
+  joinedLobby: (lobbyId: string) => void;
   lobby: (lobby: LobbyState) => void;
   /** Indique au client quel joueur il contrôle (peut changer après réindexation). */
   assigned: (playerId: number) => void;
   state: (state: GameState) => void;
   errorMsg: (message: string) => void;
-  /** Le joueur a été exclu du lobby par l'hôte. */
+  /** Le joueur a été exclu du lobby par l'hôte ou a quitté la partie. */
   kicked: (reason: string) => void;
   /** Secondes restantes au tour courant (null = pas de limite de temps). */
   turnTimer: (seconds: number | null) => void;
   /** État du vote de fin en cours (null = aucun vote actif). */
   endVote: (vote: EndVoteState | null) => void;
+  /** Un nouveau message dans le chat ou l'historique d'actions. */
+  chatMessage: (msg: ChatMessage) => void;
 }
 
 export interface ClientToServerEvents {
+  /** S'authentifie avec le nom de joueur et le sessionId. */
   join: (payload: JoinPayload) => void;
+  /** Demande la liste mise à jour des lobbys. */
+  getLobbies: () => void;
+  /** Crée un nouveau lobby. */
+  createLobby: (payload: CreateLobbyPayload) => void;
+  /** Tente de rejoindre un lobby spécifique. */
+  joinLobby: (payload: JoinLobbyPayload) => void;
+  /** Quitte le lobby actuel. */
+  leaveLobby: () => void;
   start: () => void;
   action: (action: Action) => void;
   /** L'hôte modifie les réglages de la partie (avant lancement). */
@@ -88,4 +135,6 @@ export interface ClientToServerEvents {
   endVoteStart: () => void;
   /** Un humain vote pour/contre la fin de partie. */
   endVoteCast: (approve: boolean) => void;
+  /** Envoi d'un message dans le chat. */
+  sendChat: (text: string) => void;
 }

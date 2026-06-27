@@ -8,7 +8,6 @@ import type { City, GameState, PlayerId } from "@polytopia/shared";
  * Modèle de base figé : starsPerTurn = niveau + 1.
  */
 export declare function computeStarsPerTurn(level: number): number;
-/** Revenu total d'un joueur = somme des productions de ses villes. */
 export declare function getPlayerIncome(state: GameState, playerId: PlayerId): number;
 /** Production d'une ville = base (niveau + 1) + bonus des ateliers construits. */
 export declare function cityStarsPerTurn(level: number, workshops?: number): number;

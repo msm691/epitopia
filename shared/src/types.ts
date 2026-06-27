@@ -29,7 +29,9 @@ export type Resource =
   | "minerai"
   | "bois"
   | "metal"
-  | "luxe";
+  | "luxe"
+  | "fer"
+  | "chevaux";
 
 /** Les 8 types d'unités (4 de base -> 4 évolutions). */
 export type UnitType =
@@ -40,7 +42,8 @@ export type UnitType =
   | "cavalier"
   | "chevalier"
   | "defenseur"
-  | "geant";
+  | "geant"
+  | "hero";
 
 /** Coordonnée sur la grille carrée. */
 export interface Coord {
@@ -67,13 +70,21 @@ export interface Tile {
   cityId?: string;
   /** Id de l'unité présente sur cette case, le cas échéant. */
   unitId?: string;
+  /** Présence d'une ruine antique explorable. */
+  ruin?: boolean;
+  /** Présence d'un camp barbare hostile. */
+  barbarianCamp?: boolean;
+  /** Merveille Naturelle présente sur cette case. */
+  naturalWonder?: "volcan" | "oasis";
+  /** Présence d'une route physique. */
+  hasRoad?: boolean;
 }
 
 /** Récompense au choix offerte à chaque montée de niveau d'une ville. */
 export type CityReward = "atelier" | "tresor" | "troupe" | "muraille" | "agrandir";
 
 /** Améliorations constructibles (action BUILD_IMPROVEMENT, débloquée par Construction). */
-export type ImprovementType = "atelier" | "muraille";
+export type ImprovementType = "atelier" | "muraille" | "pyramides" | "colosse";
 
 /** Une ville. */
 export interface City {
@@ -130,6 +141,18 @@ export interface Unit {
   hasMoved: boolean;
   /** A déjà attaqué ce tour. */
   hasAttacked: boolean;
+  /** L'unité est embarquée sur l'eau (Bateau). */
+  isEmbarked?: boolean;
+  /** Unité héroïque ? */
+  isHero?: boolean;
+  /** Expérience accumulée au combat. */
+  xp?: number;
+  /** Niveau de vétérance/héros. */
+  level?: number;
+  /** Compétences débloquées (Héros). */
+  skills?: string[];
+  /** Artéfacts équipés (Héros). */
+  artifacts?: string[];
 }
 
 /** Un joueur (humain ou IA). */
@@ -143,6 +166,24 @@ export interface Player {
   isAI: boolean;
   /** Malus « Disette » d'un sage : saute le revenu du prochain tour de ce joueur. */
   skipIncome?: boolean;
+  /** Le biome d'origine de cette civilisation (ex: "prairie", "neige", "desert"). */
+  biome?: string;
+  /** Statut du héros de ce joueur. */
+  heroStatus?: "available" | "alive" | "dead";
+  /** Ressources stratégiques possédées par le joueur. */
+  strategicResources?: Resource[];
+  /** Quête active donnée par un Sage. */
+  activeQuest?: {
+    type: "kill" | "harvest" | "tech";
+    target: number;
+    progress: number;
+    reward: "tech" | "hero" | "stars";
+    turnsLeft: number;
+  };
+  /** Points de culture accumulés. */
+  culture?: number;
+  /** Liste des ID de doctrines adoptées. */
+  culturalDoctrines?: string[];
 }
 
 /** État complet et autoritaire de la partie. */
@@ -159,6 +200,12 @@ export interface GameState {
   currentPlayer: PlayerId;
   /** Numéro de tour (commence à 1). */
   turn: number;
+  /** Alliances actives entre joueurs [A, B] veut dire A et B sont alliés. */
+  alliances: [PlayerId, PlayerId][];
+  /** Propositions de paix en attente. */
+  peaceProposals: { from: PlayerId; to: PlayerId }[];
+  /** Merveilles mondiales déjà construites. */
+  builtWonders: { type: ImprovementType; ownerId: PlayerId }[];
   /** Tour limite déclenchant la victoire au score ; null = partie illimitée. */
   turnLimit: number | null;
   /** Compteur déterministe pour générer des id d'unités uniques. */
@@ -180,4 +227,6 @@ export interface GameState {
     /** Description de l'effet appliqué. */
     detail: string;
   };
+  /** Événements globaux ou locaux en cours. */
+  activeEvents?: { type: string; msg: string; expiresAtTurn: number }[];
 }

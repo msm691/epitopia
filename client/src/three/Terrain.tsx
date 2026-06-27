@@ -152,20 +152,52 @@ export interface TerrainProps {
   onPick: (e: ThreeEvent<MouseEvent>, coord: Coord) => void;
 }
 
+const BIOMES: Record<string, { champ: string; foret: string; montagne: string }> = {
+  prairie: { champ: "#6cc24a", foret: "#519a3e", montagne: "#9aa0ac" },
+  neige: { champ: "#d1e1eb", foret: "#b3cddf", montagne: "#ffffff" },
+  desert: { champ: "#edd38c", foret: "#d1b56a", montagne: "#c79f58" },
+  automne: { champ: "#d69847", foret: "#a85c2c", montagne: "#8a573b" },
+};
+
+function getBiome(state: GameState, x: number, y: number): string {
+  const t = state.tiles.find(tile => tile.x === x && tile.y === y);
+  if (t && t.ownerId !== undefined) {
+    return state.players.find(p => p.id === t.ownerId)?.biome ?? "prairie";
+  }
+  let nearestCity = null;
+  let minDist = Infinity;
+  for (const c of state.cities) {
+    const d = Math.max(Math.abs(c.x - x), Math.abs(c.y - y));
+    if (d < minDist) { minDist = d; nearestCity = c; }
+  }
+  if (nearestCity) {
+    return state.players.find(p => p.id === nearestCity.ownerId)?.biome ?? "prairie";
+  }
+  return "prairie";
+}
+
 export function Terrain({ state, onPick }: TerrainProps) {
   const mat = useMemo(
     () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85 }),
     [],
   );
-  const geos = useMemo(
-    () => ({
-      champ: buildGeo(columnHeight("champ"), TERRAIN_COLOR.champ, SIDE_COLOR),
-      beach: buildGeo(columnHeight("champ"), BEACH_COLOR, BEACH_SIDE_COLOR),
-      foret: buildGeo(columnHeight("foret"), TERRAIN_COLOR.foret, SIDE_COLOR),
-      montagne: buildGeo(columnHeight("montagne"), TERRAIN_COLOR.montagne, SIDE_COLOR),
-    }),
-    [],
-  );
+
+  const geoCache = useRef(new Map<string, THREE.BoxGeometry>());
+  const getGeo = (terrain: GameState["tiles"][number]["terrain"], isCoastal: boolean, biome: string, wonder?: string) => {
+    const key = `${terrain}-${isCoastal ? "beach" : "land"}-${biome}-${wonder ?? "none"}`;
+    if (!geoCache.current.has(key)) {
+      const b = BIOMES[biome] || BIOMES.prairie;
+      let g: THREE.BoxGeometry;
+      if (wonder === "volcan") g = buildGeo(columnHeight("montagne"), "#b04444", "#703030");
+      else if (wonder === "oasis") g = buildGeo(columnHeight("champ"), "#44b0b0", "#307070");
+      else if (terrain === "montagne") g = buildGeo(columnHeight("montagne"), b!.montagne, SIDE_COLOR);
+      else if (terrain === "foret") g = buildGeo(columnHeight("foret"), b!.foret, SIDE_COLOR);
+      else if (isCoastal) g = buildGeo(columnHeight("champ"), BEACH_COLOR, BEACH_SIDE_COLOR);
+      else g = buildGeo(columnHeight("champ"), b!.champ, SIDE_COLOR);
+      geoCache.current.set(key, g);
+    }
+    return geoCache.current.get(key)!;
+  };
 
   // Décor INSTANCIÉ (déterministe) : 3 arbres par forêt, 1 pic par montagne.
   // Collecté une fois par carte -> tout le décor en ~5 draw calls (fluide).
@@ -199,22 +231,26 @@ export function Terrain({ state, onPick }: TerrainProps) {
         if (isWater(tile.terrain)) return null; // l'eau est gérée par le plan animé
         const { x: wx, z } = tileXZ(tile.x, tile.y, state.width, state.height);
         const cy = columnCenterY(tile.terrain);
-
-        let geo: THREE.BoxGeometry = geos.champ;
-        if (tile.terrain === "montagne") geo = geos.montagne;
-        else if (tile.terrain === "foret") geo = geos.foret;
-        else if (isCoastalLand(state, tile.x, tile.y)) geo = geos.beach;
+        const biome = getBiome(state, tile.x, tile.y);
+        const isCoastal = isCoastalLand(state, tile.x, tile.y);
+        const geo = getGeo(tile.terrain, isCoastal, biome, tile.naturalWonder);
 
         return (
-          <mesh
-            key={`${tile.x},${tile.y}`}
-            geometry={geo}
-            material={mat}
-            position={[wx, cy, z]}
-            castShadow
-            receiveShadow
-            onClick={(e) => onPick(e, { x: tile.x, y: tile.y })}
-          />
+          <group key={`${tile.x},${tile.y}`} position={[wx, cy, z]}>
+            <mesh
+              geometry={geo}
+              material={mat}
+              castShadow
+              receiveShadow
+              onClick={(e) => onPick(e, { x: tile.x, y: tile.y })}
+            />
+            {tile.hasRoad && (
+              <mesh position={[0, columnHeight(tile.terrain) / 2 + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                <planeGeometry args={[0.5, 0.5]} />
+                <meshStandardMaterial color="#8b5a2b" />
+              </mesh>
+            )}
+          </group>
         );
       })}
       <InstancedTrees items={trees} />

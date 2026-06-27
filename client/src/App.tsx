@@ -1,25 +1,54 @@
 import { useEffect, useRef, useState } from "react";
-import type { Action, EndVoteState, GameSettings, GameState, LobbyState } from "@polytopia/shared";
+import type { Action, EndVoteState, GameSettings, GameState, LobbyState, LobbyInfo } from "@polytopia/shared";
 import { MAP_SIZE_PRESETS, MAP_TYPE_PRESETS, TURN_SECONDS_PRESETS } from "@polytopia/shared";
 import { connect, defaultServerUrl, type GameSocket } from "./net.js";
 import { GameView } from "./GameView.js";
 import { MenuBackground } from "./three/MenuScene.js";
 import { MapPreview } from "./MapPreview.js";
+import { Chat } from "./Chat.js";
+import type { ChatMessage } from "@polytopia/shared";
+import { LobbyBrowser } from "./LobbyBrowser.js";
+
+async function hashPassword(password: string): Promise<string> {
+  // L'API Web Crypto (crypto.subtle) n'est disponible qu'en HTTPS ou localhost.
+  // Si elle n'est pas dispo (ex: HTTP sur IP), on fait un encodage de secours simple.
+  if (!window.crypto || !window.crypto.subtle) {
+    return "fallback_" + btoa(encodeURIComponent(password));
+  }
+  const msgUint8 = new TextEncoder().encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function getOrGenerateSessionId(): string {
+  let sid = localStorage.getItem("epitopia_session");
+  if (!sid) {
+    sid = Math.random().toString(36).substring(2, 15);
+    localStorage.setItem("epitopia_session", sid);
+  }
+  return sid;
+}
 
 export function App() {
   const socketRef = useRef<GameSocket | null>(null);
   const [serverUrl, setServerUrl] = useState(defaultServerUrl());
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => localStorage.getItem("epitopia_name") || "");
 
-  const [joined, setJoined] = useState(false);
+  const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  
+  const [lobbies, setLobbies] = useState<LobbyInfo[]>([]);
+  const [inLobbyBrowser, setInLobbyBrowser] = useState(false);
+
   const [myId, setMyId] = useState<number | null>(null);
   const [lobby, setLobby] = useState<LobbyState | null>(null);
   const [state, setState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Limite de temps du tour courant (secondes, null = aucune) + vote de fin.
   const [turnSeconds, setTurnSeconds] = useState<number | null>(null);
   const [endVote, setEndVote] = useState<EndVoteState | null>(null);
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   useEffect(() => {
     return () => {
@@ -30,38 +59,65 @@ export function App() {
   const resetToMenu = (reason: string | null) => {
     socketRef.current?.disconnect();
     socketRef.current = null;
-    setJoined(false);
+    setConnected(false);
     setConnecting(false);
+    setInLobbyBrowser(false);
     setLobby(null);
     setMyId(null);
     setState(null);
     setTurnSeconds(null);
     setEndVote(null);
     setError(reason);
+    setMessages([]);
   };
 
   const handleConnect = () => {
-    // Idempotent : un seul socket, même si on appuie plusieurs fois (mobile).
     if (socketRef.current || connecting) return;
+    const finalName = name.trim() || "Joueur";
+    localStorage.setItem("epitopia_name", finalName);
+    setName(finalName);
+
     setError(null);
     setConnecting(true);
     const socket = connect(serverUrl);
     socketRef.current = socket;
+    
     socket.on("assigned", (id) => setMyId(id));
-    socket.on("lobby", (l) => setLobby(l));
+    socket.on("lobby", (l) => {
+      setLobby(l);
+      setInLobbyBrowser(false);
+    });
     socket.on("state", (s) => setState(s));
     socket.on("errorMsg", (m) => setError(m));
-    socket.on("kicked", (reason) => resetToMenu(reason));
+    socket.on("kicked", (reason) => {
+      setLobby(null);
+      setState(null);
+      setInLobbyBrowser(true);
+      setError(reason);
+    });
     socket.on("turnTimer", (s) => setTurnSeconds(s));
     socket.on("endVote", (v) => setEndVote(v));
-    // Non fatal : socket.io continue de réessayer ; on affiche juste un message.
+    socket.on("chatMessage", (msg) => setMessages((prev) => [...prev, msg]));
+    
+    socket.on("lobbiesList", (list) => {
+      setLobbies(list);
+      if (!lobby && !state) {
+        setInLobbyBrowser(true);
+      }
+    });
+
+    socket.on("joinedLobby", () => {
+      setInLobbyBrowser(false);
+      setError(null);
+    });
+
     socket.on("connect_error", () => {
       setError(`Connexion à ${serverUrl}… (nouvelle tentative)`);
     });
     socket.on("connect", () => {
       setError(null);
-      socket.emit("join", { name: name.trim() || "Joueur" });
-      setJoined(true);
+      socket.emit("join", { name: finalName, sessionId: getOrGenerateSessionId() });
+      setConnected(true);
       setConnecting(false);
     });
   };
@@ -86,27 +142,42 @@ export function App() {
     socketRef.current?.emit("reset");
   };
 
+  const leaveLobby = () => {
+    socketRef.current?.emit("leaveLobby");
+    setLobby(null);
+    setState(null);
+    setInLobbyBrowser(true);
+  };
+
   const isHost = myId !== null && myId === lobby?.hostId;
 
-  // --- Phase 3 : en jeu ---
+  // --- Phase 4 : en jeu ---
   if (state && myId !== null && lobby?.started) {
     return (
-      <GameView
-        state={state}
-        myId={myId}
-        send={send}
-        isHost={isHost}
-        onNewGame={newGame}
-        turnSeconds={turnSeconds}
-        endVote={endVote}
-        onEndVoteStart={startEndVote}
-        onEndVoteCast={castEndVote}
-      />
+      <>
+        <GameView
+          state={state}
+          myId={myId}
+          send={send}
+          isHost={isHost}
+          onNewGame={newGame}
+          onLeaveGame={leaveLobby}
+          turnSeconds={turnSeconds}
+          endVote={endVote}
+          onEndVoteStart={startEndVote}
+          onEndVoteCast={castEndVote}
+        />
+        <Chat
+          messages={messages}
+          state={state}
+          onSend={(text) => socketRef.current?.emit("sendChat", text)}
+        />
+      </>
     );
   }
 
-  // --- Phase 2 : lobby ---
-  if (joined && lobby) {
+  // --- Phase 3 : lobby (salle d'attente) ---
+  if (connected && lobby) {
     const total = lobby.players.length;
     const hasBot = lobby.players.some((p) => p.isAI);
     const full = total >= lobby.maxPlayers;
@@ -114,7 +185,10 @@ export function App() {
       <>
         <MenuBackground />
         <div className="app">
-          <h1>Lobby</h1>
+          <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: "min(90vw, 1000px)", margin: "0 auto"}}>
+            <h1>{lobby.name}</h1>
+            <button className="secondary" onClick={leaveLobby}>Quitter le salon</button>
+          </div>
           {error && <p className="error">{error}</p>}
         <div className="lobby-layout">
         <div className="panel">
@@ -138,11 +212,9 @@ export function App() {
             </li>
           ))}
         </ul>
-        {/* Réglages de la partie (l'hôte édite ; les autres voient en lecture) */}
+        {/* Réglages de la partie */}
         <div className="settings">
           <h2>⚙️ Réglages</h2>
-
-          {/* Limite de tours : segmenté Limité/Illimité + stepper −/+ */}
           <div className="setting">
             <span className="setting-label">🏁 Limite de tours</span>
             <div className="setting-ctrl">
@@ -185,8 +257,6 @@ export function App() {
               )}
             </div>
           </div>
-
-          {/* Temps par tour : pills */}
           <div className="setting">
             <span className="setting-label">⏱️ Temps par tour</span>
             <div className="seg wrap">
@@ -202,8 +272,6 @@ export function App() {
               ))}
             </div>
           </div>
-
-          {/* Taille de carte : pills */}
           <div className="setting">
             <span className="setting-label">🗺️ Taille de carte</span>
             <div className="seg wrap">
@@ -239,7 +307,6 @@ export function App() {
         )}
         </div>
 
-        {/* 3 encadrés SÉPARÉS à droite du panneau ; ensemble = sa hauteur */}
         <div className="map-rail">
           {MAP_TYPE_PRESETS.map((p) => (
             <button
@@ -259,6 +326,30 @@ export function App() {
     );
   }
 
+  // --- Phase 2 : Lobby Browser ---
+  if (connected && inLobbyBrowser) {
+    return (
+      <>
+        <MenuBackground />
+        <div className="app">
+          {error && <p className="error" style={{marginBottom: "1rem"}}>{error}</p>}
+          <LobbyBrowser 
+            lobbies={lobbies} 
+            onBack={() => resetToMenu(null)}
+            onCreateLobby={async (name, password) => {
+              const hash = password ? await hashPassword(password) : undefined;
+              socketRef.current?.emit("createLobby", {name, password: hash});
+            }}
+            onJoinLobby={async (lobbyId, password) => {
+              const hash = password ? await hashPassword(password) : undefined;
+              socketRef.current?.emit("joinLobby", {lobbyId, password: hash});
+            }}
+          />
+        </div>
+      </>
+    );
+  }
+
   // --- Phase 1 : menu de connexion ---
   return (
     <>
@@ -267,10 +358,6 @@ export function App() {
         <h1>Epitopia — LAN</h1>
       {error && <p className="error">{error}</p>}
       <div className="menu">
-        <label>
-          Serveur
-          <input value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} />
-        </label>
         <label>
           Nom
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Votre nom" />
@@ -281,7 +368,7 @@ export function App() {
             <button onClick={cancelConnect}>Annuler</button>
           </div>
         ) : (
-          <button onClick={handleConnect}>Rejoindre</button>
+          <button onClick={handleConnect}>Jouer en ligne</button>
         )}
       </div>
       </div>

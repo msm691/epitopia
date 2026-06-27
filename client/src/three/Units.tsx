@@ -5,7 +5,7 @@
  */
 
 import { Component, Suspense, useMemo, type ReactNode } from "react";
-import { Billboard, useGLTF } from "@react-three/drei";
+import { Billboard, useGLTF, Text } from "@react-three/drei";
 import * as THREE from "three";
 import type { Unit, UnitType } from "@polytopia/shared";
 import { maxHp } from "@polytopia/engine";
@@ -144,6 +144,22 @@ function ProceduralUnit({ type, color }: { type: UnitType; color: THREE.Color })
             <boxGeometry args={[0.12, 0.025, 0.025]} />
             <meshStandardMaterial color={WOOD} flatShading />
           </mesh>
+        </group>
+      );
+    case "hero":
+      return (
+        <group scale={1.15}>
+          <Humanoid color={color} skin={skin} />
+          <group position={[0.17, 0.28, 0.02]} rotation={[0, 0, -0.18]}>
+            <mesh raycast={noRaycast} castShadow>
+              <cylinderGeometry args={[0.013, 0.013, 0.5, 6]} />
+              <meshStandardMaterial color={WOOD} flatShading />
+            </mesh>
+            <mesh position={[0, 0.29, 0]} raycast={noRaycast} castShadow>
+              <coneGeometry args={[0.05, 0.15, 6]} />
+              <meshStandardMaterial color={"#ffd700"} metalness={0.6} roughness={0.3} flatShading />
+            </mesh>
+          </group>
         </group>
       );
     case "archer":
@@ -373,6 +389,19 @@ export function HpBar({ unit }: { unit: Unit }) {
         <planeGeometry args={[Math.max(0.001, w * ratio), h]} />
         <meshBasicMaterial color={hpColor(ratio)} transparent depthTest={false} depthWrite={false} toneMapped={false} />
       </mesh>
+      {/* Texte des PV */}
+      <Text
+        position={[0, 0, 0.004]}
+        fontSize={0.09}
+        color="#ffffff"
+        anchorX="center"
+        anchorY="middle"
+        renderOrder={903}
+        depthTest={false}
+        depthWrite={false}
+      >
+        {`${unit.hp} / ${maxHp(unit)}`}
+      </Text>
     </Billboard>
   );
 }

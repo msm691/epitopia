@@ -32,4 +32,5 @@ export declare function capitalId(playerId: number): string;
  * La même seed (+ mêmes dimensions/joueurs) produit toujours le même état.
  */
 export declare function createInitialState(options: CreateStateOptions): GameState;
+export declare function areAllies(state: GameState, p1: number, p2: number): boolean;
 //# sourceMappingURL=state.d.ts.map

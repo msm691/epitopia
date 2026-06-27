@@ -64,8 +64,37 @@ export interface ConsultSageAction {
 export interface EndTurnAction {
     type: "END_TURN";
 }
+export interface ProposePeaceAction {
+    type: "PROPOSE_PEACE";
+    to: PlayerId;
+}
+export interface AcceptPeaceAction {
+    type: "ACCEPT_PEACE";
+    with: PlayerId;
+}
+export interface BreakPeaceAction {
+    type: "BREAK_PEACE";
+    with: PlayerId;
+}
+export interface ExploreRuinAction {
+    type: "EXPLORE_RUIN";
+    unitId: string;
+}
+export interface AdoptDoctrineAction {
+    type: "ADOPT_DOCTRINE";
+    doctrineId: string;
+}
+export interface BuildRoadAction {
+    type: "BUILD_ROAD";
+    unitId: string;
+}
+export interface UpgradeHeroAction {
+    type: "UPGRADE_HERO";
+    unitId: string;
+    skillId: string;
+}
 /** Union de toutes les actions possibles. */
-export type Action = MoveUnitAction | AttackAction | FoundCityAction | CaptureCityAction | TrainUnitAction | ResearchTechAction | HarvestResourceAction | BuildImprovementAction | AttackWallAction | ClaimCityRewardAction | ConsultSageAction | EndTurnAction;
+export type Action = MoveUnitAction | AttackAction | FoundCityAction | CaptureCityAction | TrainUnitAction | ResearchTechAction | HarvestResourceAction | BuildImprovementAction | AttackWallAction | ClaimCityRewardAction | ConsultSageAction | EndTurnAction | ProposePeaceAction | AcceptPeaceAction | BreakPeaceAction | ExploreRuinAction | AdoptDoctrineAction | BuildRoadAction | UpgradeHeroAction;
 export type ActionType = Action["type"];
 /**
  * Enveloppe réseau : une action est toujours émise par un joueur donné.

@@ -503,12 +503,20 @@ function rollResource(rng: Rng, terrain: Terrain): Resource | undefined {
   const chance = RESOURCE_CHANCE[terrain] ?? 0;
   if (rng.next() >= chance) return undefined;
   switch (terrain) {
-    case "champ":
-      return rng.next() < 0.5 ? "fruits" : "cereales";
+    case "champ": {
+      const r = rng.next();
+      if (r < 0.4) return "fruits";
+      if (r < 0.8) return "cereales";
+      return "chevaux";
+    }
     case "foret":
       return rng.next() < 0.5 ? "gibier" : "bois";
-    case "montagne":
-      return rng.next() < 0.5 ? "minerai" : "metal";
+    case "montagne": {
+      const r = rng.next();
+      if (r < 0.4) return "minerai";
+      if (r < 0.8) return "metal";
+      return "fer";
+    }
     case "eau":
       return "poisson";
     default:
@@ -663,6 +671,14 @@ export function generateMap(
   // Sages mystérieux (PNJ) à dilemme, espacés des départs.
   placeSages(rng, tiles, width, height, starts);
 
+  // Ruines Antiques
+  placeRuins(rng, tiles, starts);
+
+  // Camps Barbares
+  placeBarbarianCamps(rng, tiles, starts);
+  // Merveilles Naturelles (V5)
+  placeNaturalWonders(rng, tiles, width, height, starts);
+
   return { tiles, starts };
 }
 
@@ -707,6 +723,35 @@ function placeSages(
     if (cand.sage || cand.village || !farEnough(c)) continue;
     cand.sage = SAGE_NAMES[placed.length]!;
     placed.push(c);
+  }
+}
+
+/** Place des Merveilles Naturelles (Volcan et Oasis) sur la carte. */
+function placeNaturalWonders(rng: Rng, tiles: Tile[], width: number, height: number, starts: readonly Coord[]): void {
+  // Volcan (3 montagnes)
+  const mountainCandidates = tiles.filter(t => t.terrain === "montagne" && !t.village && !t.resource && !t.sage && !t.ruin && !t.barbarianCamp);
+  for (let i = 0; i < mountainCandidates.length; i++) {
+    const root = mountainCandidates[i];
+    // Cherche 2 montagnes adjacentes pour former un bloc de 3
+    const adj = mountainCandidates.filter(m => chebyshevLocal(root, m) === 1);
+    if (adj.length >= 2) {
+      root.naturalWonder = "volcan";
+      adj[0].naturalWonder = "volcan";
+      adj[1].naturalWonder = "volcan";
+      break;
+    }
+  }
+
+  // Oasis (2 eau en plein milieu d'un désert/champ)
+  const waterCandidates = tiles.filter(t => t.terrain === "eau" && !t.resource);
+  for (let i = 0; i < waterCandidates.length; i++) {
+    const root = waterCandidates[i];
+    const adj = waterCandidates.filter(m => chebyshevLocal(root, m) === 1);
+    if (adj.length >= 1) {
+      root.naturalWonder = "oasis";
+      adj[0].naturalWonder = "oasis";
+      break;
+    }
   }
 }
 
@@ -864,4 +909,44 @@ function placeVillages(
   }
 
   return placed;
+}
+
+function placeRuins(rng: Rng, tiles: Tile[], starts: readonly Coord[]): void {
+  const target = Math.floor(tiles.length / 100);
+  const startKeys = new Set(starts.map((s) => `${s.x},${s.y}`));
+  let placed = 0;
+  for (let i = 0; i < tiles.length && placed < target; i++) {
+    const t = tiles[rng.int(0, tiles.length - 1)];
+    if (!t || !isLandTerrain(t.terrain) || t.village || t.sage || startKeys.has(`${t.x},${t.y}`)) continue;
+    
+    // Éloigné des départs
+    let far = true;
+    for (const s of starts) {
+      if (chebyshevLocal(t, s) < 4) far = false;
+    }
+    if (far) {
+      t.ruin = true;
+      placed++;
+    }
+  }
+}
+
+function placeBarbarianCamps(rng: Rng, tiles: Tile[], starts: readonly Coord[]): void {
+  const target = Math.floor(tiles.length / 120);
+  const startKeys = new Set(starts.map((s) => `${s.x},${s.y}`));
+  let placed = 0;
+  for (let i = 0; i < tiles.length && placed < target; i++) {
+    const t = tiles[rng.int(0, tiles.length - 1)];
+    if (!t || !isLandTerrain(t.terrain) || t.village || t.sage || t.ruin || startKeys.has(`${t.x},${t.y}`)) continue;
+    
+    // Très éloigné des départs
+    let far = true;
+    for (const s of starts) {
+      if (chebyshevLocal(t, s) < 5) far = false;
+    }
+    if (far) {
+      t.barbarianCamp = true;
+      placed++;
+    }
+  }
 }

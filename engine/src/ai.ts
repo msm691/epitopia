@@ -24,6 +24,8 @@ import { applyAction } from "./applyAction.js";
 import { chebyshev, freeSpawnTileFor, isWaterAt } from "./units.js";
 import { computeCombat, getDefenseBonus, maxHp } from "./combat.js";
 import { computeTechCost, getPlayerCityCount, playerHasTech, trainableUnitsFor } from "./tech.js";
+import { areAllies } from "./state.js";
+import { findPath } from "./pathfinding.js";
 
 /** Seuil de PV (fraction du max) en-dessous duquel une unité se replie. */
 const RETREAT_HP_RATIO = 0.4;
@@ -70,13 +72,24 @@ function bestMove(
   const canNavigate = playerHasTech(state, unit.ownerId, "navigation");
   const onWater = isWaterAt(state, unit.x, unit.y);
   const mv = canNavigate && onWater ? Math.max(unit.movement, NAVAL_MOVEMENT) : unit.movement;
+  // Si "toward", on utilise l'algorithme A* pour trouver la vraie distance (prenant en compte montagnes/eau).
+  const getDist = (startCoord: Coord) => {
+    if (pref !== "toward") return targets.length > 0 ? nearestDist(startCoord, targets) : 0;
+    let minPathLen = Infinity;
+    for (const t of targets) {
+      const path = findPath(state, startCoord, t, canNavigate);
+      if (path && path.length < minPathLen) minPathLen = path.length;
+    }
+    return minPathLen;
+  };
+
   for (let dy = -mv; dy <= mv; dy++) {
     for (let dx = -mv; dx <= mv; dx++) {
       if (dx === 0 && dy === 0) continue;
       const to = { x: unit.x + dx, y: unit.y + dy };
       const action: MoveUnitAction = { type: "MOVE_UNIT", unitId: unit.id, to };
       if (!isLegal(state, action)) continue;
-      const d = targets.length > 0 ? nearestDist(to, targets) : 0;
+      const d = getDist(to);
       const better =
         pref === "toward" ? d < bestScore : pref === "away" ? d > bestScore : d > bestScore;
       if (better) {
@@ -139,8 +152,83 @@ function aiWantsNavigation(state: GameState, pid: PlayerId): boolean {
  * Toujours une action LÉGALE ; renvoie END_TURN quand il n'y a plus rien d'utile.
  */
 export function nextAIAction(state: GameState, pid: PlayerId): Action {
+  const player = state.players[pid];
   const myUnits = state.units.filter((u) => u.ownerId === pid);
   const myCities = state.cities.filter((c) => c.ownerId === pid);
+
+  const isBarbarian = player?.civName === "Barbares";
+
+  // --- COMPORTEMENT BARBARE ---
+  if (isBarbarian) {
+    // 1. Attaquer
+    let bestAtk: Action | null = null;
+    let bestAtkScore = -Infinity;
+    for (const u of myUnits) {
+      if (u.hasAttacked) continue;
+      for (const t of state.units) {
+        if (t.ownerId === pid) continue;
+        const action: Action = { type: "ATTACK", attackerId: u.id, targetId: t.id };
+        if (!isLegal(state, action)) continue;
+        const melee = chebyshev(u, t) === 1;
+        const r = computeCombat(u, t, melee, getDefenseBonus(state, t));
+        if (r.attackerDies && !r.defenderDies) continue; 
+        const score = r.defenderDies ? 1000 + r.defenderDamage : r.defenderDamage - r.attackerDamage;
+        if (score >= 0 && score > bestAtkScore) {
+          bestAtkScore = score;
+          bestAtk = action;
+        }
+      }
+    }
+    if (bestAtk) return bestAtk;
+
+    // 2. Se déplacer (vers le plus proche, n'importe qui)
+    const enemies = enemyTargets(state, pid);
+    for (const u of myUnits) {
+      if (u.hasMoved) continue;
+      const m = bestMove(state, u, enemies, "toward");
+      if (m) return m;
+    }
+
+    return { type: "END_TURN" };
+  }
+  // --- FIN COMPORTEMENT BARBARE ---
+
+
+  // 0a. Trahison et Opportunisme (Briser la paix)
+  // Si un allié est très faible (2x moins de villes), on le trahit.
+  for (const p of state.players) {
+    if (p.id === pid || p.civName === "Barbares") continue;
+    if (areAllies(state, pid, p.id)) {
+      const hisCities = getPlayerCityCount(state, p.id);
+      if (hisCities > 0 && hisCities < myCities.length / 2) {
+        const action: Action = { type: "BREAK_PEACE", with: p.id };
+        if (isLegal(state, action)) return action;
+      }
+    }
+  }
+
+  // 0b. Supplication (Proposer la paix)
+  // Si on est très faible (1 ville) et qu'un joueur non-allié est très fort (>3 villes).
+  if (myCities.length <= 1) {
+    for (const p of state.players) {
+      if (p.id === pid || p.civName === "Barbares") continue;
+      if (!areAllies(state, pid, p.id) && getPlayerCityCount(state, p.id) >= 3) {
+        const action: Action = { type: "PROPOSE_PEACE", to: p.id };
+        if (isLegal(state, action)) return action;
+      }
+    }
+  }
+
+  // 0c. Urgence Défensive : Muraille
+  // Si une unité ennemie est à 2 cases d'une ville sans défense, construire un rempart.
+  for (const c of myCities) {
+    if (c.hasWall) continue;
+    const isThreatened = state.units.some(u => u.ownerId !== pid && chebyshev(u, c) <= 2);
+    if (isThreatened) {
+      const action: Action = { type: "BUILD_IMPROVEMENT", cityId: c.id, improvement: "muraille" };
+      if (isLegal(state, action)) return action;
+    }
+  }
 
   // 1. Capturer une ville ennemie (priorité absolue : condition de victoire).
   for (const u of myUnits) {
@@ -184,6 +272,7 @@ export function nextAIAction(state: GameState, pid: PlayerId): Action {
   if (bestAtk) return bestAtk;
 
   // 3. Récolter la meilleure ressource accessible (croissance économique).
+  //    Les ressources stratégiques (fer, chevaux) ont une priorité ABSOLUE.
   let bestHarvest: Action | null = null;
   let bestGain = -1;
   for (const c of myCities) {
@@ -193,7 +282,10 @@ export function nextAIAction(state: GameState, pid: PlayerId): Action {
         const action: Action = { type: "HARVEST_RESOURCE", cityId: c.id, at };
         if (!isLegal(state, action)) continue;
         const tile = state.tiles[at.y * state.width + at.x];
-        const gain = tile?.resource ? RESOURCE_POP_GAIN[tile.resource] : 0;
+        let gain = tile?.resource ? RESOURCE_POP_GAIN[tile.resource] : 0;
+        if (tile?.resource === "fer" || tile?.resource === "chevaux") {
+          gain += 100; // Priorité absolue
+        }
         if (gain > bestGain) {
           bestGain = gain;
           bestHarvest = action;
@@ -234,7 +326,6 @@ export function nextAIAction(state: GameState, pid: PlayerId): Action {
   const onMyCity = (u: Unit) => myCities.some((c) => c.x === u.x && c.y === u.y);
   // Offensive dès qu'on a ~2 unités au-delà des garnisons (1 / ville).
   const attackMode = myCities.length === 0 || myUnits.length >= myCities.length + 2;
-  const player = state.players[pid];
   const canAffordUnit = wantsArmy && (player?.stars ?? 0) >= cheapestUnitCost(state, pid);
 
   for (const u of myUnits) {

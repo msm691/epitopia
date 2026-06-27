@@ -3,8 +3,9 @@
  */
 import type { GameState, PlayerId, Resource, UnitType } from "@polytopia/shared";
 import { type TechDef } from "@polytopia/shared";
+import type { Player } from "@polytopia/shared";
 /** Coût d'une tech selon son palier et le nombre de villes du joueur. */
-export declare function computeTechCost(tier: number, numCities: number): number;
+export declare function computeTechCost(tier: number, numCities: number, player?: Player): number;
 /** Définition de tech si l'id est valide, sinon undefined. */
 export declare function getTech(techId: string): TechDef | undefined;
 /** Nombre de villes possédées par un joueur. */

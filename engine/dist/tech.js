@@ -3,8 +3,12 @@
  */
 import { ALL_UNIT_TYPES, TECHS, TECH_BASE_COST, } from "@polytopia/shared";
 /** Coût d'une tech selon son palier et le nombre de villes du joueur. */
-export function computeTechCost(tier, numCities) {
-    return TECH_BASE_COST * tier + numCities;
+export function computeTechCost(tier, numCities, player) {
+    let cost = TECH_BASE_COST * tier + numCities;
+    if (player?.culturalDoctrines?.includes("erudition")) {
+        cost = Math.max(1, Math.floor(cost * 0.8));
+    }
+    return cost;
 }
 /** Définition de tech si l'id est valide, sinon undefined. */
 export function getTech(techId) {

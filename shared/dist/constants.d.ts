@@ -68,12 +68,9 @@ export declare const IMPROVEMENT_LABELS: Record<import("./types.js").Improvement
 /** Nombre maximal d'ateliers constructibles par ville. */
 export declare const MAX_WORKSHOPS = 5;
 /**
- * Coût du PROCHAIN atelier à BÂTIR, selon le nombre d'ateliers déjà BÂTIS
- * (`builtWorkshops`, hors ateliers reçus en récompense) : croît linéairement
- * (5, 10, 15, …) pour que stacker reste possible mais de plus en plus cher.
- * La muraille garde un coût fixe.
+ * Coût d'une amélioration de ville. L'atelier coûte 5 + 2 par atelier DEJA CONSTRUIT (via action).
  */
-export declare function improvementCost(improvement: import("./types.js").ImprovementType, builtWorkshops: number): number;
+export declare function improvementCost(type: import("./types.js").ImprovementType, builtWorkshops: number, player?: import("./types.js").Player): number;
 /** Rempart : PV de départ, et échelle des dégâts qu'une unité lui inflige. */
 export declare const WALL_MAX_HP = 12;
 export declare const WALL_DAMAGE_SCALE = 2;
@@ -162,6 +159,14 @@ export declare const UNIT_STATS: {
         readonly movement: 1;
         readonly cost: 10;
     };
+    readonly hero: {
+        readonly hp: 20;
+        readonly attack: 3;
+        readonly defense: 3;
+        readonly range: 1;
+        readonly movement: 2;
+        readonly cost: 20;
+    };
 };
 /**
  * Temps de PRODUCTION (en tours du propriétaire) des grosses unités : la ville
@@ -174,6 +179,12 @@ export declare function unitBuildTurns(type: import("./types.js").UnitType): num
 export declare const ALL_UNIT_TYPES: readonly import("./types.js").UnitType[];
 /** Noms affichables des unités. */
 export declare const UNIT_NAMES: Record<import("./types.js").UnitType, string>;
-/** Couleurs de civilisation par défaut (index = ordre de join). */
 export declare const DEFAULT_CIV_COLORS: readonly string[];
+export interface DoctrineDef {
+    id: string;
+    name: string;
+    description: string;
+    cost: number;
+}
+export declare const DOCTRINES: Record<string, DoctrineDef>;
 //# sourceMappingURL=constants.d.ts.map

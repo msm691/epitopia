@@ -88,24 +88,33 @@ export const ALL_CITY_REWARDS = [
 export const IMPROVEMENT_COSTS = {
     atelier: 5, // 🔨 +1⭐/tour permanent (coût de BASE ; croît à chaque atelier, cf. improvementCost)
     muraille: 8, // 🧱 rempart à PV (siège)
+    pyramides: 30, // 🏛️ Merveille (+3⭐/tour global)
+    colosse: 30, // 🏛️ Merveille (+1 Def global)
 };
-export const ALL_IMPROVEMENTS = ["atelier", "muraille"];
+export const ALL_IMPROVEMENTS = ["atelier", "muraille", "pyramides", "colosse"];
 export const IMPROVEMENT_LABELS = {
     atelier: "🔨 Atelier",
     muraille: "🧱 Rempart",
+    pyramides: "🏛️ Pyramides",
+    colosse: "🗽 Colosse",
 };
 /** Nombre maximal d'ateliers constructibles par ville. */
 export const MAX_WORKSHOPS = 5;
 /**
- * Coût du PROCHAIN atelier à BÂTIR, selon le nombre d'ateliers déjà BÂTIS
- * (`builtWorkshops`, hors ateliers reçus en récompense) : croît linéairement
- * (5, 10, 15, …) pour que stacker reste possible mais de plus en plus cher.
- * La muraille garde un coût fixe.
+ * Coût d'une amélioration de ville. L'atelier coûte 5 + 2 par atelier DEJA CONSTRUIT (via action).
  */
-export function improvementCost(improvement, builtWorkshops) {
-    if (improvement === "atelier")
-        return IMPROVEMENT_COSTS.atelier * (builtWorkshops + 1);
-    return IMPROVEMENT_COSTS[improvement];
+export function improvementCost(type, builtWorkshops, player) {
+    let cost = 0;
+    if (type === "muraille")
+        cost = 10;
+    else if (type === "atelier")
+        cost = 5 + builtWorkshops * 2;
+    else
+        cost = IMPROVEMENT_COSTS[type];
+    if (player?.culturalDoctrines?.includes("batisseurs")) {
+        cost = Math.max(1, cost - 2);
+    }
+    return cost;
 }
 /** Rempart : PV de départ, et échelle des dégâts qu'une unité lui inflige. */
 export const WALL_MAX_HP = 12;
@@ -131,6 +140,8 @@ export const RESOURCE_POP_GAIN = {
     bois: 2,
     metal: 2,
     luxe: 3,
+    fer: 1,
+    chevaux: 1,
 };
 /** Coût en étoiles d'une récolte selon la ressource. */
 export const RESOURCE_HARVEST_COST = {
@@ -142,6 +153,8 @@ export const RESOURCE_HARVEST_COST = {
     bois: 5,
     metal: 5,
     luxe: 5,
+    fer: 5,
+    chevaux: 5,
 };
 /**
  * Stats provisoires des 8 unités (4 base + 4 évolutions).
@@ -170,6 +183,8 @@ export const UNIT_STATS = {
     chevalier: { hp: 16, attack: 3, defense: 2, range: 1, movement: 3, cost: 8 },
     // Géant : gros tank qui frappe fort mais lent. atk 5 -> 4, hp 30 -> 28.
     geant: { hp: 28, attack: 4, defense: 3, range: 1, movement: 1, cost: 10 },
+    // Héros : unité d'élite polyvalente, chère et unique
+    hero: { hp: 20, attack: 3, defense: 3, range: 1, movement: 2, cost: 20 },
 };
 /**
  * Temps de PRODUCTION (en tours du propriétaire) des grosses unités : la ville
@@ -194,6 +209,7 @@ export const ALL_UNIT_TYPES = [
     "catapulte",
     "chevalier",
     "geant",
+    "hero",
 ];
 /** Noms affichables des unités. */
 export const UNIT_NAMES = {
@@ -205,8 +221,8 @@ export const UNIT_NAMES = {
     catapulte: "Catapulte",
     chevalier: "Chevalier",
     geant: "Géant",
+    hero: "Héros",
 };
-/** Couleurs de civilisation par défaut (index = ordre de join). */
 export const DEFAULT_CIV_COLORS = [
     "#e23d3d", // rouge
     "#3d7fe2", // bleu
@@ -217,4 +233,30 @@ export const DEFAULT_CIV_COLORS = [
     "#e23d9b", // rose
     "#e2843d", // orange
 ];
+export const DOCTRINES = {
+    fanatisme: {
+        id: "fanatisme",
+        name: "Fanatisme",
+        description: "+1 Attaque pour toutes vos unités.",
+        cost: 50,
+    },
+    marchands: {
+        id: "marchands",
+        name: "Guilde des Marchands",
+        description: "Les villes génèrent +1⭐ par niveau.",
+        cost: 50,
+    },
+    erudition: {
+        id: "erudition",
+        name: "Érudition",
+        description: "Le coût des technologies est réduit de 20%.",
+        cost: 50,
+    },
+    batisseurs: {
+        id: "batisseurs",
+        name: "Bâtisseurs",
+        description: "Les murailles et ateliers coûtent 2⭐ de moins.",
+        cost: 50,
+    },
+};
 //# sourceMappingURL=constants.js.map

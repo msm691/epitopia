@@ -184,30 +184,33 @@ function applyMalus(state, pid, pick, amount) {
     }
     return racket(state, pid, amount);
 }
-/**
- * Résout la consultation d'un sage sur la case `at` par le joueur courant :
- * retire le sage, tire 50/50 bonus/malus au RNG seedé, applique l'effet et
- * enregistre le résultat dans `state.lastSage` (pour l'affichage client).
- */
 export function resolveConsultSage(state, at) {
     const pid = state.currentPlayer;
-    // Le sage RESTE sur la carte : on note seulement que ce joueur l'a consulté
-    // (il ne pourra plus accepter ce marché-là).
     const idx = tileIndex(state.width, at.x, at.y);
     const here = state.tiles[idx];
     const tiles = state.tiles.slice();
     tiles[idx] = { ...here, sageUsedBy: [...(here.sageUsedBy ?? []), pid] };
-    const base = { ...state, tiles };
-    // RNG propre à CE sage, CE tour ET CE joueur (déterministe ; deux joueurs ne
-    // partagent pas le même tirage le même tour).
-    const seed = (state.seed ^ (at.x * 73856093) ^ (at.y * 19349663) ^ (state.turn * 83492791) ^
-        (pid * 2654435761)) >>> 0;
+    let base = { ...state, tiles };
+    const seed = (state.seed ^ (at.x * 73856093) ^ (at.y * 19349663) ^ (state.turn * 83492791) ^ (pid * 2654435761)) >>> 0;
     const rng = createRng(seed);
-    const good = rng.next() < 0.5;
-    const pick = rng.int(0, 3);
-    const amount = sageStars(state, pid);
-    const e = good ? applyBonus(base, pid, pick, amount, at) : applyMalus(base, pid, pick, amount);
+    // Type de quête (0: kill, 1: harvest, 2: tech)
+    const questTypeR = rng.int(0, 2);
+    const qType = questTypeR === 0 ? "kill" : questTypeR === 1 ? "harvest" : "tech";
+    const target = qType === "kill" ? 2 : qType === "harvest" ? 3 : 1;
+    const turnsLeft = qType === "kill" ? 3 : qType === "harvest" ? 4 : 5;
+    const rewardTypeR = rng.int(0, 2);
+    const reward = rewardTypeR === 0 ? "tech" : rewardTypeR === 1 ? "hero" : "stars";
+    const quest = {
+        type: qType,
+        target,
+        progress: 0,
+        reward,
+        turnsLeft
+    };
+    const players = base.players.map(p => p.id === pid ? { ...p, activeQuest: quest } : p);
+    const title = "Nouvelle Quête !";
+    const detail = `Le sage t'a donné une mission : ${qType === 'kill' ? 'Éliminer 2 unités' : qType === 'harvest' ? 'Récolter 3 ressources' : 'Rechercher 1 tech'} en ${turnsLeft} tours pour obtenir une récompense (${reward === 'stars' ? 'Pactole' : reward === 'hero' ? 'Héros' : 'Technologie'}).`;
     const id = `${at.x},${at.y}@${state.turn}#${pid}`;
-    return { ...e.state, lastSage: { id, by: pid, good, title: e.title, detail: e.detail } };
+    return { ...base, players, lastSage: { id, by: pid, good: true, title, detail } };
 }
 //# sourceMappingURL=sages.js.map

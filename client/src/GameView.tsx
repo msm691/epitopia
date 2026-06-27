@@ -25,6 +25,7 @@ import {
   RESOURCE_HARVEST_COST,
   RESOURCE_POP_GAIN,
   unitBuildTurns,
+  DOCTRINES,
 } from "@polytopia/shared";
 import {
   isLegal,
@@ -42,6 +43,7 @@ import {
 } from "@polytopia/engine";
 import { Scene3D, type Scene3DHandle } from "./three/Scene3D.js";
 import { SagePortrait } from "./three/Buildings.js";
+import { AudioManger } from "./audio.js";
 
 const TECH_LIST = Object.values(TECHS).sort((a, b) => a.branch - b.branch || a.tier - b.tier);
 
@@ -70,6 +72,8 @@ const RESOURCE_LABELS: Record<Resource, string> = {
   bois: "🌲 Bois",
   metal: "⚙️ Métal",
   luxe: "💎 Luxe",
+  fer: "⛏️ Fer (Stratégique)",
+  chevaux: "🐎 Chevaux (Stratégique)",
 };
 
 const TERRAIN_LABELS: Record<GameState["tiles"][number]["terrain"], string> = {
@@ -144,6 +148,8 @@ export interface GameViewProps {
   onEndVoteStart: () => void;
   /** Vote pour/contre la fin de partie. */
   onEndVoteCast: (approve: boolean) => void;
+  /** Quitte la partie en cours pour revenir au menu. */
+  onLeaveGame?: () => void;
 }
 
 export function GameView({
@@ -156,11 +162,24 @@ export function GameView({
   endVote,
   onEndVoteStart,
   onEndVoteCast,
+  onLeaveGame,
 }: GameViewProps) {
   const [selected, setSelected] = useState<Coord | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [techOpen, setTechOpen] = useState(false);
+  const [diplomacyOpen, setDiplomacyOpen] = useState(false);
+  const [doctrinesOpen, setDoctrinesOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
+
+  const addToast = (msg: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t, { id, msg }]);
+    setTimeout(() => {
+      setToasts((t) => t.filter((x) => x.id !== id));
+    }, 4000);
+  };
   // Dilemme d'un sage en cours (case du sage), et dernier résultat à afficher.
   const [sageAt, setSageAt] = useState<Coord | null>(null);
   const [sageResult, setSageResult] = useState<GameState["lastSage"] | null>(null);
@@ -169,6 +188,15 @@ export function GameView({
   // Toute mise à jour autoritaire de l'état annule une confirmation en suspens
   // (la situation a pu changer : l'action ne serait plus forcément la même).
   useEffect(() => setPending(null), [state]);
+
+  // Démarrer et arrêter la musique de fond
+  useEffect(() => {
+    AudioManger.setMute(isMuted);
+    if (!isMuted) {
+      AudioManger.playBgm();
+    }
+    return () => { AudioManger.stopBgm(); };
+  }, [isMuted]);
 
   // Affiche le résultat d'une consultation de sage (une seule fois, pour moi).
   useEffect(() => {
@@ -184,7 +212,6 @@ export function GameView({
   const victory = useMemo(() => checkVictory(state), [state]);
   const isMyTurn = state.currentPlayer === myId && !victory.over;
 
-  // Compte à rebours du tour courant : repart à chaque changement de tour.
   const [remaining, setRemaining] = useState<number | null>(null);
   useEffect(() => {
     if (turnSeconds == null || victory.over) {
@@ -193,10 +220,42 @@ export function GameView({
     }
     setRemaining(turnSeconds);
     const id = setInterval(() => {
-      setRemaining((r) => (r == null ? null : Math.max(0, r - 1)));
+      setRemaining((r) => {
+        if (r == null) return null;
+        const next = Math.max(0, r - 1);
+        return next;
+      });
     }, 1000);
     return () => clearInterval(id);
   }, [state.turn, state.currentPlayer, turnSeconds, victory.over]);
+
+  useEffect(() => {
+    if (isMyTurn && remaining === 0) {
+      send({ type: "END_TURN" });
+    }
+  }, [isMyTurn, remaining, send]);
+
+  // Raccourcis Clavier
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.key === "Escape") {
+        setSelected(null);
+        setPending(null);
+        setTechOpen(false);
+        setDiplomacyOpen(false);
+        setDoctrinesOpen(false);
+        setHelpOpen(false);
+      } else if ((e.key === "Enter" || e.key === " ") && isMyTurn && !pending && !techOpen && !diplomacyOpen && !doctrinesOpen && !helpOpen) {
+        e.preventDefault();
+        send({ type: "END_TURN" });
+        addToast("Fin de tour");
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isMyTurn, pending, techOpen, diplomacyOpen, helpOpen, send]);
 
   // Vote de fin : disponible en mode infini (pas de limite de tours).
   const canVoteEnd = state.turnLimit === null && !victory.over;
@@ -281,13 +340,13 @@ export function GameView({
   const combatPreview = useMemo(() => {
     if (pending?.kind !== "attack" || !selectedUnit) return null;
     const melee = chebyshev(selectedUnit, pending.target) === 1;
-    return computeCombat(selectedUnit, pending.target, melee, getDefenseBonus(state, pending.target));
+    return computeCombat(state, selectedUnit, pending.target, melee, getDefenseBonus(state, pending.target));
   }, [pending, selectedUnit, state]);
 
   // Aperçu des dégâts infligés à un rempart.
   const wallPreview = useMemo(
-    () => (pending?.kind === "attackWall" && selectedUnit ? computeWallDamage(selectedUnit) : null),
-    [pending, selectedUnit],
+    () => (pending?.kind === "attackWall" && selectedUnit ? computeWallDamage(state, selectedUnit) : null),
+    [pending, selectedUnit, state],
   );
 
   const onTileClick = (coord: Coord) => {
@@ -327,14 +386,17 @@ export function GameView({
   const confirmPending = () => {
     if (!pending || !isMyTurn) return;
     if (pending.kind === "move" && selectedUnit) {
+      AudioManger.playMove();
       send({ type: "MOVE_UNIT", unitId: selectedUnit.id, to: pending.to });
       setSelected(pending.to); // on garde l'unité sélectionnée pour enchaîner
     } else if (pending.kind === "attack" && selectedUnit) {
+      AudioManger.playAttack();
       send({ type: "ATTACK", attackerId: selectedUnit.id, targetId: pending.target.id });
       setSelected(null);
     } else if (pending.kind === "harvest" && selectedCity) {
       send({ type: "HARVEST_RESOURCE", cityId: selectedCity.id, at: pending.at });
     } else if (pending.kind === "attackWall" && selectedUnit) {
+      AudioManger.playAttack();
       send({ type: "ATTACK_WALL", attackerId: selectedUnit.id, cityId: pending.city.id });
       setSelected(null);
     }
@@ -357,6 +419,14 @@ export function GameView({
   const canFound =
     selectedUnit !== undefined &&
     isLegal(state, { type: "FOUND_CITY", unitId: selectedUnit.id });
+
+  const canBuildRoad = 
+    selectedUnit !== undefined && 
+    isLegal(state, { type: "BUILD_ROAD", unitId: selectedUnit.id });
+
+  const canExploreRuin = 
+    selectedUnit !== undefined && 
+    isLegal(state, { type: "EXPLORE_RUIN", unitId: selectedUnit.id });
 
   const hasAction = Boolean(selectedUnit || selectedCity);
 
@@ -420,6 +490,9 @@ export function GameView({
               : `Tour de ${current?.civName}`}
         </span>
         <span className="pill stars">⭐ {me?.stars}</span>
+        {me?.culture !== undefined && <span className="pill culture" title="Culture">🎭 {me.culture}</span>}
+        {me?.strategicResources?.includes("fer") && <span className="pill" title="Fer">⛏️</span>}
+        {me?.strategicResources?.includes("chevaux") && <span className="pill" title="Chevaux">🐎</span>}
         {remaining != null && (
           <span className={`pill timer${remaining <= 5 ? " low" : ""}`}>⏱ {remaining}s</span>
         )}
@@ -439,8 +512,18 @@ export function GameView({
         <button className="icon-btn" title="Pivoter à droite" onClick={() => rotateCamera(0.4)}>
           ↻
         </button>
+        <button className="icon-btn" title="Doctrines" onClick={() => setDoctrinesOpen(true)}>
+          🎭
+        </button>
         <button className="icon-btn" title="Recentrer la carte" onClick={fitCamera}>
           🎯
+        </button>
+        <button
+          className="icon-btn"
+          title={isMuted ? "Activer le son" : "Couper le son"}
+          onClick={() => setIsMuted(!isMuted)}
+        >
+          {isMuted ? "🔇" : "🔊"}
         </button>
         <button
           className="icon-btn help-btn"
@@ -449,14 +532,44 @@ export function GameView({
         >
           ?
         </button>
+        {onLeaveGame && (
+          <button
+            className="icon-btn"
+            title="Quitter le salon"
+            onClick={onLeaveGame}
+          >
+            🚪
+          </button>
+        )}
         <button className="primary" onClick={() => send({ type: "END_TURN" })} disabled={!isMyTurn}>
           Fin de tour
         </button>
       </header>
 
+      {/* Événements actifs */}
+      {state.activeEvents && state.activeEvents.map((evt, i) => (
+        <div key={i} className="event-banner" style={{ top: `${8 + i * 3.5}rem` }}>
+          {evt.msg}
+        </div>
+      ))}
+
+      {/* Quête active */}
+      {me?.activeQuest && (
+        <div className="quest-banner">
+          📜 Quête : {me.activeQuest.type === 'kill' ? 'Éliminer 2 unités' : me.activeQuest.type === 'harvest' ? 'Récolter 3 ressources' : 'Rechercher 1 technologie'}
+          <br/>
+          Progression: {me.activeQuest.progress} / {me.activeQuest.target} (Reste {me.activeQuest.turnsLeft} tour{me.activeQuest.turnsLeft > 1 ? 's' : ''})
+        </div>
+      )}
+
       {/* Bouton flottant : ouvre l'arbre de compétences */}
       <button className="fab tech-fab" onClick={() => setTechOpen(true)}>
         🔬 Technologies
+      </button>
+
+      {/* Bouton flottant : ouvre la diplomatie */}
+      <button className="fab diplomacy-fab" onClick={() => setDiplomacyOpen(true)}>
+        🤝 Diplomatie
       </button>
 
       {/* Barre de CONFIRMATION : aucune action n'est envoyée sans passer ici. */}
@@ -567,6 +680,21 @@ export function GameView({
                 unitType: type,
               });
               const build = unitBuildTurns(type);
+              let lockReason = "";
+              if (!legal) {
+                if (me && (type === "epeiste" || type === "catapulte") && !me.strategicResources?.includes("fer")) {
+                  lockReason = "Nécessite la ressource Fer (⛏️) dans votre empire.";
+                } else if (me && (type === "cavalier" || type === "chevalier") && !me.strategicResources?.includes("chevaux")) {
+                  lockReason = "Nécessite la ressource Chevaux (🐎) dans votre empire.";
+                } else if (me && me.stars < UNIT_STATS[type].cost) {
+                  lockReason = "Pas assez d'étoiles.";
+                } else if (type === "hero" && (me?.heroStatus === "alive" || me?.heroStatus === "dead")) {
+                  lockReason = "Héros déjà recruté.";
+                } else {
+                  lockReason = "Conditions non remplies.";
+                }
+              }
+
               return (
                 <button
                   key={type}
@@ -575,6 +703,7 @@ export function GameView({
                   }
                   disabled={!legal}
                   title={
+                    !legal ? lockReason :
                     build > 0
                       ? `Production : ${build} tour${build > 1 ? "s" : ""} (la ville reste occupée)`
                       : "Apparition immédiate"
@@ -607,7 +736,7 @@ export function GameView({
                     send({ type: "BUILD_IMPROVEMENT", cityId: selectedCity.id, improvement: imp })
                   }
                 >
-                  {IMPROVEMENT_LABELS[imp]} ({improvementCost(imp, selectedCity.builtWorkshops ?? 0)}⭐)
+                  {IMPROVEMENT_LABELS[imp]} ({improvementCost(imp, selectedCity.builtWorkshops ?? 0, me ? state.players[me] : undefined)}⭐)
                 </button>
               );
             })}
@@ -622,10 +751,33 @@ export function GameView({
               🏗️ Fonder une ville
             </button>
           )}
+          {canBuildRoad && selectedUnit && (
+            <button
+              className="reward"
+              onClick={() => {
+                send({ type: "BUILD_ROAD", unitId: selectedUnit.id });
+                // We keep selection so the unit can still move or attack (if it hasn't)
+              }}
+            >
+              🛣️ Construire une route (1⭐)
+            </button>
+          )}
+          {canExploreRuin && selectedUnit && (
+            <button
+              className="capture"
+              onClick={() => {
+                send({ type: "EXPLORE_RUIN", unitId: selectedUnit.id });
+                setSelected(null);
+              }}
+            >
+              🏺 Explorer les ruines
+            </button>
+          )}
           {canCapture && selectedUnit && (
             <button
               className="capture"
               onClick={() => {
+                AudioManger.playCapture();
                 send({ type: "CAPTURE_CITY", unitId: selectedUnit.id });
                 setSelected(null);
               }}
@@ -637,6 +789,8 @@ export function GameView({
             <span className="hint">
               PV {selectedUnit.hp} — 🟨 plein = déplacer, 🟥 = cible
               {selectedUnit.range >= 2 ? ", 🟧 contour = portée d'attaque" : ""}
+              {selectedUnit.isHero && ` | Héros Niv. ${selectedUnit.level ?? 1} (XP: ${selectedUnit.xp ?? 0}/${(selectedUnit.level ?? 1) * 3})`}
+              {selectedUnit.isHero && selectedUnit.artifacts && selectedUnit.artifacts.length > 0 && ` | Artéfacts: ${selectedUnit.artifacts.join(", ")}`}
             </span>
           )}
           {selectedCity && (
@@ -671,6 +825,12 @@ export function GameView({
           return (
             <div className="infobar floating">
               <span className="info-title">{TERRAIN_LABELS[tile.terrain]}</span>
+              {tile.naturalWonder === "volcan" && (
+                <span className="info-line" style={{ color: "#ff5555" }}>🌋 Grand Volcan : +5⭐/tour pour une ville à portée</span>
+              )}
+              {tile.naturalWonder === "oasis" && (
+                <span className="info-line" style={{ color: "#55aaff" }}>🌴 Oasis Sacrée : +5🎭/tour pour une ville à portée</span>
+              )}
               {(tile.terrain === "eau" || tile.terrain === "ocean") && (
                 <span className="info-line">
                   {hasNavigation
@@ -757,6 +917,34 @@ export function GameView({
           canResearch={isMyTurn}
           onResearch={(id) => send({ type: "RESEARCH_TECH", techId: id })}
           onClose={() => setTechOpen(false)}
+        />
+      )}
+
+      {/* Diplomatie (modale) */}
+      {diplomacyOpen && (
+        <DiplomacyModal
+          state={state}
+          me={myId}
+          onSend={(action) => {
+            send(action);
+            if (action.type === "PROPOSE_PEACE") addToast("Proposition de paix envoyée.");
+            if (action.type === "ACCEPT_PEACE") addToast("Paix acceptée !");
+            if (action.type === "BREAK_PEACE") addToast("Alliance rompue.");
+          }}
+          onClose={() => setDiplomacyOpen(false)}
+        />
+      )}
+
+      {/* Doctrines (modale) */}
+      {doctrinesOpen && (
+        <DoctrinesModal
+          state={state}
+          me={myId}
+          onSend={(action) => {
+            send(action);
+            addToast("Doctrine adoptée !");
+          }}
+          onClose={() => setDoctrinesOpen(false)}
         />
       )}
 
@@ -865,6 +1053,15 @@ export function GameView({
           </div>
         </div>
       )}
+
+      {/* Toasts de notifications */}
+      <div className="toasts-container">
+        {toasts.map((t) => (
+          <div key={t.id} className="toast">
+            {t.msg}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -876,14 +1073,10 @@ const HELP_TABS: ReadonlyArray<{ id: string; label: string; body: ReactNode }> =
     label: "🏁 Bases",
     body: (
       <ul>
-        <li>
-          À ton tour : tu gagnes des <b>⭐ étoiles</b>, tu joues tes unités et tes villes, puis{" "}
-          <b>« Fin de tour »</b>.
-        </li>
-        <li>
-          Les ⭐ servent à <b>recruter</b> des unités et <b>rechercher</b> des technologies.
-        </li>
-        <li>Plus tes villes sont grandes, plus elles te rapportent d'⭐.</li>
+        <li><b>But du jeu</b> : L'objectif est de développer votre civilisation et de vaincre les autres tribus.</li>
+        <li><b>Tour de jeu</b> : À chaque tour, vous encaissez vos revenus (en <b>⭐ étoiles</b>), déplacez vos unités, attaquez, entraînez des troupes ou bâtissez. Terminez par « Fin de tour ».</li>
+        <li><b>Brouillard de guerre</b> : La carte est cachée. Déplacez vos unités pour révéler de nouveaux territoires, villages et ressources.</li>
+        <li><b>Étoiles (⭐)</b> : La monnaie du jeu. Plus vos villes grandissent, plus vous générez d'étoiles chaque tour. Elles servent à presque tout faire (recruter, rechercher, bâtir).</li>
       </ul>
     ),
   },
@@ -892,17 +1085,10 @@ const HELP_TABS: ReadonlyArray<{ id: string; label: string; body: ReactNode }> =
     label: "🏙️ Villes",
     body: (
       <ul>
-        <li>
-          <b>Récolte</b> les ressources autour d'une ville pour la faire <b>grandir</b> et monter de
-          niveau.
-        </li>
-        <li>
-          Chaque niveau te laisse choisir une <b>récompense</b> (or, troupe, atelier, muraille…).
-        </li>
-        <li>
-          Pour t'agrandir : pose une unité sur un 🛖 <b>village</b> et fonde une ville, ou{" "}
-          <b>capture</b> une ville ennemie.
-        </li>
+        <li><b>Fonder et Capturer</b> : Posez une unité sur un village (🛖) pour y fonder une nouvelle ville. Capturez une ville ennemie en posant une unité dessus quand elle n'a plus de défenseur.</li>
+        <li><b>Croissance</b> : Récoltez les ressources autour d'une ville (fruits, gibier, etc.) pour augmenter sa population.</li>
+        <li><b>Niveau et Récompenses</b> : Quand la jauge de population est pleine, la ville monte de niveau. Vous gagnez des étoiles bonus de base, et au passage d'un palier, vous devez choisir une récompense puissante (extension de frontière, ateliers, explorateur, or bonus...).</li>
+        <li><b>Construction</b> : Vous pouvez bâtir des <b>Ateliers</b> (qui rapportent de l'or par tour permanent) ou des <b>Murailles</b> (qui forcent l'ennemi à un siège avant de capturer la ville).</li>
       </ul>
     ),
   },
@@ -911,14 +1097,44 @@ const HELP_TABS: ReadonlyArray<{ id: string; label: string; body: ReactNode }> =
     label: "⚔️ Combat",
     body: (
       <ul>
-        <li>Au corps-à-corps, le défenseur survivant te riposte : attaque quand tu es favorisé.</li>
-        <li>
-          On défend mieux <b>en ville, en forêt ou en montagne</b>. Une <b>muraille</b> protège
-          encore plus.
-        </li>
-        <li>
-          Une ville <b>murée</b> doit être assiégée : casse le rempart <b>avant</b> de la capturer.
-        </li>
+        <li><b>Attaque et Riposte</b> : En attaquant au corps-à-corps, le défenseur riposte <i>s'il survit</i>. Pensez à l'attaquer d'abord avec des unités à distance (Archers, Catapultes) qui ne subissent pas de riposte !</li>
+        <li><b>Terrains Défensifs</b> : Se tenir sur une forêt ou une montagne (nécessite les technologies associées) octroie de gros bonus défensifs. Pensez à votre placement.</li>
+        <li><b>Murailles</b> : Une ville fortifiée dispose de PV de rempart. Vous devez d'abord attaquer le rempart pour le détruire. Tant qu'il tient, l'ennemi ne peut pas entrer dans la ville.</li>
+        <li><b>Soin et Vétérans</b> : Les unités regagnent des PV en se reposant (ne pas bouger/attaquer du tour). De plus, tuer 3 ennemis transforme votre unité en <b>Vétéran</b> (PV Max augmentés).</li>
+      </ul>
+    ),
+  },
+  {
+    id: "ressources",
+    label: "⛏️ Ressources",
+    body: (
+      <ul>
+        <li><b>Ressources Standard</b> : Fruits, Gibiers, Poissons... Ces ressources servent uniquement à augmenter la population de vos villes.</li>
+        <li><b>Ressources Stratégiques (Fer et Chevaux)</b> : Ces ressources spéciales (montagnes et champs) sont cruciales.</li>
+        <li><b>Le Blocage Stratégique</b> : Pour pouvoir recruter des unités lourdes (Épéistes, Catapultes, Chevaliers...), <b>vous devez posséder la ressource dans votre empire</b> (en l'ayant récoltée).</li>
+        <li>Sans Fer ni Chevaux, vous serez restreint à des armées légères (Guerriers, Archers). Étendez vite votre territoire pour sécuriser ces gisements !</li>
+      </ul>
+    ),
+  },
+  {
+    id: "diplomatie",
+    label: "🤝 Diplomatie",
+    body: (
+      <ul>
+        <li><b>Pactes de Paix</b> : Via l'icône Diplomatie (haut de l'écran), vous pouvez proposer un pacte de paix.</li>
+        <li><b>Alliances</b> : Deux joueurs alliés ne peuvent plus s'attaquer. Pratique pour s'unir contre un joueur plus fort.</li>
+        <li><b>Trahisons</b> : La paix n'est pas éternelle. Vous pouvez briser un traité à tout moment pour lancer une attaque surprise. L'Intelligence Artificielle n'hésitera pas à le faire si elle vous juge faible.</li>
+      </ul>
+    ),
+  },
+  {
+    id: "quetes",
+    label: "🧙 Quêtes & Événements",
+    body: (
+      <ul>
+        <li><b>Les Sages</b> : Au lieu de vous donner un simple bonus, les Sages (Stan et Nico) vous donneront une <b>Quête</b> à durée limitée (tuer X ennemis, récolter X éléments...). Réussissez avant la fin du compteur pour obtenir des Pactoles, Héros ou Technologies !</li>
+        <li><b>Événements Aléatoires</b> : À chaque tour, votre monde peut basculer. Vous avez 5% de chance de subir un événement.</li>
+        <li><b>Types d'événements</b> : Il y a les bons (Âge d'Or, Inspiration qui donnent de l'or instantané) et les mauvais (Famine qui réduit drastiquement les revenus du tour). Restez prudents dans vos réserves d'or.</li>
       </ul>
     ),
   },
@@ -927,23 +1143,8 @@ const HELP_TABS: ReadonlyArray<{ id: string; label: string; body: ReactNode }> =
     label: "🔬 Tech",
     body: (
       <ul>
-        <li>Les technologies débloquent de nouvelles unités, ressources et actions.</li>
-        <li>
-          Quelques clés : <b>Escalade</b> (montagnes), <b>Navigation</b> (mer),{" "}
-          <b>Construction</b> (bâtir).
-        </li>
-      </ul>
-    ),
-  },
-  {
-    id: "sages",
-    label: "🧙 Sages",
-    body: (
-      <ul>
-        <li>
-          <b>Stan</b> et <b>Nico</b> errent sur la carte. Mets une unité à côté pour les consulter.
-        </li>
-        <li>C'est un pari : ça peut t'aider… ou te coûter cher. Une seule tentative par sage.</li>
+        <li><b>L'Arbre de Technologies</b> : Il débloque de nouvelles actions et unités. Acheter des technologies coûte des étoiles. Plus vous avez de villes, plus les technologies coûtent cher (le savoir est plus long à propager).</li>
+        <li><b>Exemples vitaux</b> : <b>Escalade</b> (pour marcher sur les montagnes), <b>Navigation</b> (pour traverser les mers), ou <b>Construction</b> (pour bâtir ateliers et murailles).</li>
       </ul>
     ),
   },
@@ -952,12 +1153,9 @@ const HELP_TABS: ReadonlyArray<{ id: string; label: string; body: ReactNode }> =
     label: "🏆 Victoire",
     body: (
       <ul>
-        <li>
-          <b>Domination</b> : sois le dernier à posséder des villes.
-        </li>
-        <li>
-          Sinon, au dernier tour, c'est le <b>meilleur score</b> qui gagne.
-        </li>
+        <li><b>Domination Totale</b> : Le premier joueur qui élimine toutes les autres civilisations (en capturant leur dernière ville) remporte la partie immédiatement.</li>
+        <li><b>Score</b> : Si le mode de jeu a une limite de tours (ex: 30 tours), la partie se termine au tour 30. Le joueur avec le plus de Score l'emporte.</li>
+        <li>Le score se calcule en cumulant le niveau de vos villes, vos technologies recherchées, le nombre et le niveau de vos unités vivantes.</li>
       </ul>
     ),
   },
@@ -1020,7 +1218,7 @@ function TechTree({ state, me, cityCount, canResearch, onResearch, onClose }: Te
 
   const node = (tech: TechDef) => {
     const owned = owns(tech.id);
-    const cost = computeTechCost(tech.tier, cityCount);
+    const cost = computeTechCost(tech.tier, cityCount, player);
     const prereqMet = !tech.requires || owns(tech.requires);
     const affordable = stars >= cost;
     const legal = canResearch && isLegal(state, { type: "RESEARCH_TECH", techId: tech.id });
@@ -1078,6 +1276,107 @@ function TechTree({ state, me, cityCount, canResearch, onResearch, onClose }: Te
           ))}
         </div>
         {!canResearch && <p className="hint">Tu pourras rechercher à ton tour.</p>}
+      </div>
+    </div>
+  );
+}
+
+function DiplomacyModal({ state, me, onSend, onClose }: { state: GameState; me: number; onSend: (a: Action) => void; onClose: () => void }) {
+  const proposalsToMe = state.peaceProposals.filter(p => p.to === me);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal help-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>🤝 Diplomatie</h2>
+          <button className="close-btn" onClick={onClose}>✕</button>
+        </div>
+        <div className="help-body">
+          {proposalsToMe.length > 0 && (
+            <div style={{ marginBottom: "1rem" }}>
+              <h3>Propositions reçues</h3>
+              {proposalsToMe.map(p => {
+                const fromPlayer = state.players[p.from];
+                return (
+                  <div key={p.from} style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "0.5rem" }}>
+                    <span>{fromPlayer?.civName} propose la paix !</span>
+                    <button onClick={() => onSend({ type: "ACCEPT_PEACE", with: p.from })}>Accepter</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          <h3>Autres civilisations</h3>
+          <ul>
+            {state.players.filter(p => p.id !== me && p.civName !== "Barbares").map(p => {
+              const isAllied = state.alliances.some(([a, b]) => (a === me && b === p.id) || (a === p.id && b === me));
+              const hasProposed = state.peaceProposals.some(prop => prop.from === me && prop.to === p.id);
+              return (
+                <li key={p.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                  <span style={{ color: p.color }}>{p.civName}</span>
+                  {isAllied ? (
+                    <button onClick={() => onSend({ type: "BREAK_PEACE", with: p.id })}>Rompre la paix</button>
+                  ) : hasProposed ? (
+                    <span>Proposition envoyée</span>
+                  ) : (
+                    <button onClick={() => onSend({ type: "PROPOSE_PEACE", to: p.id })}>Proposer la paix</button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DoctrinesModal({ state, me, onSend, onClose }: { state: GameState; me: number; onSend: (a: Action) => void; onClose: () => void }) {
+  const player = state.players[me];
+  const culture = player?.culture ?? 0;
+  const adopted = player?.culturalDoctrines ?? [];
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal help-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>🎭 Doctrines Culturelles</h2>
+          <span className="tech-stars">🎭 {culture}</span>
+          <button className="close-btn" onClick={onClose}>✕</button>
+        </div>
+        <div className="help-body">
+          <p style={{ marginBottom: "1rem" }}>
+            Adoptez des doctrines pour obtenir des bonus passifs permanents pour votre empire.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {Object.values(DOCTRINES).map((doc) => {
+              const isAdopted = adopted.includes(doc.id);
+              const canAfford = culture >= doc.cost;
+              return (
+                <div key={doc.id} className={`tech-card ${isAdopted ? "owned" : canAfford ? "legal" : "locked"}`} style={{ display: "flex", justifyContent: "space-between", padding: "1rem" }}>
+                  <div>
+                    <strong style={{ display: "block", fontSize: "1.2rem" }}>{doc.name}</strong>
+                    <span style={{ color: "#aaa" }}>{doc.description}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                    {isAdopted ? (
+                      <span style={{ color: "var(--color-primary)" }}>Adoptée ✓</span>
+                    ) : (
+                      <button 
+                        className="primary" 
+                        disabled={!canAfford}
+                        onClick={() => onSend({ type: "ADOPT_DOCTRINE", doctrineId: doc.id })}
+                      >
+                        {doc.cost} 🎭
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

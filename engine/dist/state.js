@@ -41,6 +41,15 @@ export function createInitialState(options) {
     const height = options.height ?? size;
     const { tiles, starts } = generateMap(options.seed, width, height, playerCount, options.mapType ?? "terres");
     const players = createPlayers(playerCount, options.playerInfos);
+    // Add Barbarians virtual player
+    players.push({
+        id: players.length,
+        civName: "Barbares",
+        color: "#444444",
+        stars: 0,
+        unlockedTechs: [],
+        isAI: true,
+    });
     // Capitale auto-fondée + 1 guerrier en garnison sur la case de départ.
     const cities = [];
     const units = [];
@@ -66,20 +75,25 @@ export function createInitialState(options) {
         // l'envoyer ailleurs expose sa ville). Anti-rush.
         const unitId = `u${nextUnitId++}`;
         tile.unitId = unitId;
+        const heroStats = UNIT_STATS.hero;
         units.push({
             id: unitId,
-            type: "guerrier",
+            type: "hero",
             ownerId: playerId,
             x: start.x,
             y: start.y,
-            hp: warrior.hp,
-            attack: warrior.attack,
-            defense: warrior.defense,
-            range: warrior.range,
-            movement: warrior.movement,
+            hp: heroStats.hp,
+            attack: heroStats.attack,
+            defense: heroStats.defense,
+            range: heroStats.range,
+            movement: heroStats.movement,
             hasMoved: false,
             hasAttacked: false,
+            isHero: true,
+            xp: 0,
+            level: 1,
         });
+        players[playerId].heroStatus = "alive";
     });
     return {
         width,
@@ -90,10 +104,18 @@ export function createInitialState(options) {
         cities,
         currentPlayer: 0,
         turn: 1,
+        alliances: [],
+        peaceProposals: [],
+        builtWonders: [],
         turnLimit: options.turnLimit === undefined ? DEFAULT_TURN_LIMIT : options.turnLimit,
         nextUnitId,
         nextCityId: 0,
         seed: options.seed,
     };
+}
+export function areAllies(state, p1, p2) {
+    if (p1 === p2)
+        return true;
+    return state.alliances.some(([a, b]) => (a === p1 && b === p2) || (a === p2 && b === p1));
 }
 //# sourceMappingURL=state.js.map

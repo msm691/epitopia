@@ -32,7 +32,9 @@ export type SceneEvent =
   | { id: number; kind: "impact"; x: number; y: number }
   | { id: number; kind: "capture"; x: number; y: number; color: string }
   | { id: number; kind: "ghost"; x: number; y: number; type: UnitType; color: string }
-  | { id: number; kind: "text"; x: number; y: number; text: string; color: string };
+  | { id: number; kind: "text"; x: number; y: number; text: string; color: string }
+  | { id: number; kind: "projectile"; fromX: number; fromY: number; toX: number; toY: number }
+  | { id: number; kind: "confetti"; x: number; y: number; color: string };
 
 export interface SceneAnim {
   glides: MutableRefObject<Map<string, { fromX: number; fromY: number; t0: number }>>;
@@ -116,7 +118,11 @@ export function useSceneAnimations(state: GameState): SceneAnim {
           }
         }
         const len = Math.hypot(best.x - u.x, best.y - u.y) || 1;
-        lunges.current.set(u.id, { dx: (best.x - u.x) / len, dy: (best.y - u.y) / len, t0: now });
+        if (len > 1.5) {
+          fresh.push({ id: nextId(), kind: "projectile", fromX: u.x, fromY: u.y, toX: best.x, toY: best.y });
+        } else {
+          lunges.current.set(u.id, { dx: (best.x - u.x) / len, dy: (best.y - u.y) / len, t0: now });
+        }
       }
     }
     // Captures de ville -> éclat coloré.
@@ -125,6 +131,7 @@ export function useSceneAnimations(state: GameState): SceneAnim {
       if (pc && pc.ownerId !== nc.ownerId) {
         const owner = state.players[nc.ownerId];
         fresh.push({ id: nextId(), kind: "capture", x: nc.x, y: nc.y, color: owner?.color ?? "#ffffff" });
+        fresh.push({ id: nextId(), kind: "confetti", x: nc.x, y: nc.y, color: owner?.color ?? "#ffffff" });
       }
     }
     // Gains d'étoiles -> texte doré sur la capitale.
@@ -229,7 +236,7 @@ export function AnimatedUnits({ state, anim }: { state: GameState; anim: SceneAn
         const owner = state.players[u.ownerId];
         const base = new THREE.Color(owner?.color ?? "#cccccc");
         const spent = u.hasMoved && u.hasAttacked;
-        const onWater = isWater(terrainAt(state, u.x, u.y));
+        const onWater = u.isEmbarked ?? false;
         return (
           <group
             key={u.id}
@@ -403,9 +410,90 @@ export function Effects({ state, events, removeEvent }: { state: GameState; even
             return <CaptureFx key={ev.id} state={state} ev={ev} onDone={done} />;
           case "text":
             return <TextFx key={ev.id} state={state} ev={ev} onDone={done} />;
+          case "projectile":
+            return <ProjectileFx key={ev.id} state={state} ev={ev} onDone={done} />;
+          case "confetti":
+            return <ConfettiFx key={ev.id} state={state} ev={ev} onDone={done} />;
         }
       })}
     </group>
+  );
+}
+
+const PROJECTILE_MS = 250;
+
+function ProjectileFx({ state, ev, onDone }: { state: GameState; ev: Extract<SceneEvent, { kind: "projectile" }>; onDone: () => void }) {
+  const ref = useRef<THREE.Mesh>(null);
+  const t0 = useRef(performance.now());
+  const from = tileTop(state, ev.fromX, ev.fromY);
+  const to = tileTop(state, ev.toX, ev.toY);
+
+  useFrame(() => {
+    const p = clamp01((performance.now() - t0.current) / PROJECTILE_MS);
+    if (ref.current) {
+      // Parabole légère
+      const x = from.x + (to.x - from.x) * p;
+      const z = from.z + (to.z - from.z) * p;
+      const y = from.y + (to.y - from.y) * p + Math.sin(p * Math.PI) * 1.5;
+      ref.current.position.set(x, y + 0.3, z);
+    }
+    if (p >= 1) onDone();
+  });
+
+  return (
+    <mesh ref={ref}>
+      <sphereGeometry args={[0.15, 8, 8]} />
+      <meshBasicMaterial color="#ffffff" />
+    </mesh>
+  );
+}
+
+const CONFETTI_MS = 1200;
+
+function ConfettiFx({ state, ev, onDone }: { state: GameState; ev: Extract<SceneEvent, { kind: "confetti" }>; onDone: () => void }) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const t0 = useRef(performance.now());
+  const base = tileTop(state, ev.x, ev.y);
+  const count = 30;
+
+  const particles = useMemo(() => {
+    const arr = [];
+    for (let i = 0; i < count; i++) {
+      arr.push({
+        vx: (Math.random() - 0.5) * 4,
+        vy: 2 + Math.random() * 3,
+        vz: (Math.random() - 0.5) * 4,
+        rx: Math.random(), ry: Math.random(), rz: Math.random()
+      });
+    }
+    return arr;
+  }, []);
+
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+
+  useFrame(() => {
+    const t = clamp01((performance.now() - t0.current) / CONFETTI_MS);
+    const dt = 1 / 60;
+    if (ref.current) {
+      for (let i = 0; i < count; i++) {
+        const p = particles[i]!;
+        p.vy -= 9.8 * dt * 0.5; // gravité légère
+        dummy.position.set(base.x + p.vx * t, base.y + 0.5 + p.vy * t, base.z + p.vz * t);
+        dummy.rotation.set(t * p.rx * 10, t * p.ry * 10, t * p.rz * 10);
+        dummy.scale.setScalar(Math.max(0, 1 - t)); // Rétrécissement
+        dummy.updateMatrix();
+        ref.current.setMatrixAt(i, dummy.matrix);
+      }
+      ref.current.instanceMatrix.needsUpdate = true;
+    }
+    if (t >= 1) onDone();
+  });
+
+  return (
+    <instancedMesh ref={ref} args={[undefined, undefined, count]}>
+      <planeGeometry args={[0.1, 0.1]} />
+      <meshBasicMaterial color={ev.color} side={THREE.DoubleSide} />
+    </instancedMesh>
   );
 }
 

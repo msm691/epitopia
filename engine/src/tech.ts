@@ -11,9 +11,15 @@ import {
   type TechId,
 } from "@polytopia/shared";
 
+import type { Player } from "@polytopia/shared";
+
 /** Coût d'une tech selon son palier et le nombre de villes du joueur. */
-export function computeTechCost(tier: number, numCities: number): number {
-  return TECH_BASE_COST * tier + numCities;
+export function computeTechCost(tier: number, numCities: number, player?: Player): number {
+  let cost = TECH_BASE_COST * tier + numCities;
+  if (player?.culturalDoctrines?.includes("erudition")) {
+    cost = Math.max(1, Math.floor(cost * 0.8));
+  }
+  return cost;
 }
 
 /** Définition de tech si l'id est valide, sinon undefined. */

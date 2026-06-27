@@ -1,17 +1,29 @@
-/**
- * Serveur autoritaire (socket.io) — une partie unique.
- * Détient le GameState officiel : valide les Actions reçues (isLegal + c'est
- * bien ton tour), les applique (applyAction) et diffuse le nouvel état.
- * AUCUNE règle de jeu ici : tout passe par l'engine.
- */
 import { createServer } from "node:http";
 import { Server } from "socket.io";
+import { randomUUID } from "node:crypto";
 import { MAX_PLAYERS, DEFAULT_GAME_SETTINGS, DEFAULT_CIV_COLORS, } from "@polytopia/shared";
 import { applyAction, isLegal, createInitialState, nextAIAction, checkVictory, mapSizeForPlayers, } from "@polytopia/engine";
-/** Délai entre deux actions d'IA (lisibilité côté joueurs). */
 const DEFAULT_AI_STEP_MS = 350;
-/** Délai avant de sauter le tour d'un humain déconnecté (anti-blocage). */
 const DEFAULT_SKIP_MS = 8000;
+// Représente une session de jeu (Lobby)
+class LobbySession {
+    id;
+    name;
+    password;
+    players = [];
+    started = false;
+    state = null;
+    aiTimer = null;
+    settings = { ...DEFAULT_GAME_SETTINGS };
+    endVote = null;
+    // Associe un sessionId (client) à un PlayerId dans ce lobby
+    sessionToPlayerId = new Map();
+    constructor(id, name, password) {
+        this.id = id;
+        this.name = name;
+        this.password = password;
+    }
+}
 export function createGameServer(port = 3001, opts = {}) {
     const aiStepMs = opts.aiStepMs ?? DEFAULT_AI_STEP_MS;
     const skipMs = opts.skipMs ?? DEFAULT_SKIP_MS;
@@ -19,343 +31,553 @@ export function createGameServer(port = 3001, opts = {}) {
     const io = new Server(http, {
         cors: { origin: "*" },
     });
-    // État du lobby / de la partie. socketToPlayer pointe vers l'OBJET joueur,
-    // stable même si les indices changent (kick/déconnexion).
-    const lobby = [];
-    const socketToPlayer = new Map();
-    let started = false;
-    let state = null;
-    let aiTimer = null;
-    let settings = { ...DEFAULT_GAME_SETTINGS };
-    /** Vote de fin en cours (mode infini), ou null. */
-    let endVote = null;
-    /** Couleur attribuée par le serveur : tirée au hasard parmi les couleurs LIBRES
-     *  (jamais deux joueurs de la même couleur tant qu'il en reste). */
-    const pickColor = () => {
-        const used = new Set(lobby.map((p) => p.color));
+    const lobbies = new Map();
+    const socketSessions = new Map();
+    const getLobbyInfoList = () => {
+        const list = [];
+        for (const [id, lobby] of lobbies.entries()) {
+            // On peut n'afficher que les lobbys non commencés
+            list.push({
+                id,
+                name: lobby.name,
+                hasPassword: !!lobby.password,
+                currentPlayers: lobby.players.length,
+                maxPlayers: MAX_PLAYERS,
+                started: lobby.started,
+            });
+        }
+        return list;
+    };
+    const pickColor = (lobby) => {
+        const used = new Set(lobby.players.map((p) => p.color));
         const free = DEFAULT_CIV_COLORS.filter((c) => !used.has(c));
         const pool = free.length > 0 ? free : DEFAULT_CIV_COLORS;
         return pool[Math.floor(Math.random() * pool.length)] ?? "#ffffff";
     };
-    const lobbySnapshot = () => ({
-        players: lobby.map((p) => ({ ...p })),
-        hostId: lobby[0]?.id ?? null,
-        started,
+    const lobbySnapshot = (lobby) => ({
+        id: lobby.id,
+        name: lobby.name,
+        players: lobby.players.map((p) => ({ ...p })),
+        hostId: lobby.players[0]?.id ?? null,
+        started: lobby.started,
         maxPlayers: MAX_PLAYERS,
-        settings,
+        settings: lobby.settings,
     });
-    const isHost = (sid) => socketToPlayer.get(sid) === lobby[0] && lobby.length > 0;
-    const socketIdOf = (player) => {
-        for (const [sid, p] of socketToPlayer)
-            if (p === player)
-                return sid;
-        return undefined;
+    const broadcastLobby = (lobby) => io.to(lobby.id).emit("lobby", lobbySnapshot(lobby));
+    const broadcastState = (lobby) => {
+        if (lobby.state)
+            io.to(lobby.id).emit("state", lobby.state);
     };
-    /** Recale les id sur l'index et prévient chaque client de son (nouvel) id. */
-    const reassignIds = () => {
-        lobby.forEach((p, i) => (p.id = i));
-        for (const [sid, p] of socketToPlayer)
-            io.to(sid).emit("assigned", p.id);
+    const broadcastLobbiesList = () => io.emit("lobbiesList", getLobbyInfoList());
+    const reassignIds = (lobby) => {
+        lobby.players.forEach((p, i) => (p.id = i));
+        // Reconstruire sessionToPlayerId
+        lobby.sessionToPlayerId.clear();
+        // Nous devons associer chaque socketId au nouveau playerId
+        for (const [sid, session] of socketSessions) {
+            if (session.lobbyId === lobby.id) {
+                const player = lobby.players.find(p => p.name === session.name);
+                if (player) {
+                    lobby.sessionToPlayerId.set(session.sessionId, player.id);
+                    io.to(sid).emit("assigned", player.id);
+                }
+            }
+        }
     };
-    const broadcastLobby = () => io.emit("lobby", lobbySnapshot());
-    const broadcastState = () => {
-        if (state)
-            io.emit("state", state);
+    const isHost = (lobby, sid) => {
+        const sess = socketSessions.get(sid);
+        if (!sess)
+            return false;
+        const pid = lobby.sessionToPlayerId.get(sess.sessionId);
+        return pid === lobby.players[0]?.id && lobby.players.length > 0;
     };
-    const connectedHumanCount = () => lobby.filter((p) => !p.isAI && p.connected).length;
-    const endVoteSnapshot = () => endVote
+    const connectedHumanCount = (lobby) => lobby.players.filter((p) => !p.isAI && p.connected).length;
+    const endVoteSnapshot = (lobby) => lobby.endVote
         ? {
-            approve: [...endVote.approve],
-            decline: [...endVote.decline],
-            needed: endVote.needed,
-            humans: endVote.humans,
+            approve: [...lobby.endVote.approve],
+            decline: [...lobby.endVote.decline],
+            needed: lobby.endVote.needed,
+            humans: lobby.endVote.humans,
         }
         : null;
-    const broadcastEndVote = () => io.emit("endVote", endVoteSnapshot());
-    /** Évalue le vote : assez de POUR -> fin au score ; tout le monde a voté -> rejet. */
-    function evaluateEndVote() {
-        if (!endVote || !state)
+    const broadcastEndVote = (lobby) => io.to(lobby.id).emit("endVote", endVoteSnapshot(lobby));
+    function evaluateEndVote(lobby) {
+        if (!lobby.endVote || !lobby.state)
             return;
-        if (endVote.approve.size >= endVote.needed) {
-            // Fin de partie au score : on place la limite juste avant le tour courant
-            // (réutilise la victoire au score de l'engine, sans règle nouvelle).
-            state = { ...state, turnLimit: state.turn - 1 };
-            endVote = null;
-            clearTurnTimer();
-            broadcastState();
-            broadcastEndVote();
-            io.emit("turnTimer", null);
+        if (lobby.endVote.approve.size >= lobby.endVote.needed) {
+            lobby.state = { ...lobby.state, turnLimit: lobby.state.turn - 1 };
+            lobby.endVote = null;
+            clearTurnTimer(lobby);
+            broadcastState(lobby);
+            broadcastEndVote(lobby);
+            io.to(lobby.id).emit("turnTimer", null);
             return;
         }
-        if (endVote.approve.size + endVote.decline.size >= endVote.humans) {
-            endVote = null; // vote rejeté (tout le monde a répondu)
+        if (lobby.endVote.approve.size + lobby.endVote.decline.size >= lobby.endVote.humans) {
+            lobby.endVote = null;
         }
-        broadcastEndVote();
+        broadcastEndVote(lobby);
     }
-    const clearTurnTimer = () => {
-        if (aiTimer)
-            clearTimeout(aiTimer);
-        aiTimer = null;
+    const clearTurnTimer = (lobby) => {
+        if (lobby.aiTimer)
+            clearTimeout(lobby.aiTimer);
+        lobby.aiTimer = null;
     };
-    /** Force la fin du tour courant (IA en échec ou humain déconnecté). */
-    function forceEndTurn() {
-        if (!started || !state)
+    function forceEndTurn(lobby) {
+        if (!lobby.started || !lobby.state)
             return;
         try {
-            if (isLegal(state, { type: "END_TURN" }))
-                state = applyAction(state, { type: "END_TURN" });
+            if (isLegal(lobby.state, { type: "END_TURN" })) {
+                lobby.state = applyAction(lobby.state, { type: "END_TURN" });
+            }
         }
         catch (e) {
             console.error("[server] END_TURN forcé en échec", e);
         }
-        broadcastState();
-        driveTurn();
+        broadcastState(lobby);
+        driveTurn(lobby);
     }
-    /** Joue une action d'IA, en protégeant le serveur de toute exception. */
-    function stepAI() {
-        if (!started || !state)
+    function broadcastActionLog(lobby, action, playerId) {
+        let text = null;
+        if (action.type === "FOUND_CITY")
+            text = "A fondé une nouvelle ville.";
+        else if (action.type === "CAPTURE_CITY")
+            text = "A capturé une ville.";
+        else if (action.type === "RESEARCH_TECH")
+            text = "A débloqué une nouvelle technologie.";
+        if (text) {
+            io.to(lobby.id).emit("chatMessage", {
+                id: `sys-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                senderId: playerId,
+                text,
+                timestamp: Date.now(),
+            });
+        }
+    }
+    function stepAI(lobby) {
+        if (!lobby.started || !lobby.state)
             return;
-        const p = state.players[state.currentPlayer];
-        if (!p?.isAI || checkVictory(state).over)
+        const p = lobby.state.players[lobby.state.currentPlayer];
+        if (!p?.isAI || checkVictory(lobby.state).over)
             return;
         try {
-            state = applyAction(state, nextAIAction(state, state.currentPlayer));
+            const action = nextAIAction(lobby.state, lobby.state.currentPlayer);
+            lobby.state = applyAction(lobby.state, action);
+            broadcastActionLog(lobby, action, lobby.state.currentPlayer);
         }
         catch (e) {
             console.error("[server] erreur IA, on saute le tour", e);
-            forceEndTurn();
+            forceEndTurn(lobby);
             return;
         }
-        broadcastState();
-        driveTurn();
+        broadcastState(lobby);
+        driveTurn(lobby);
     }
-    /**
-     * Pilote le tour courant : programme l'IA si c'est un bot, ou un saut
-     * automatique si c'est un humain déconnecté. Garantit que la partie avance.
-     */
-    function driveTurn() {
-        clearTurnTimer();
-        if (!started || !state || checkVictory(state).over) {
-            io.emit("turnTimer", null);
+    function driveTurn(lobby) {
+        clearTurnTimer(lobby);
+        if (!lobby.started || !lobby.state || checkVictory(lobby.state).over) {
+            io.to(lobby.id).emit("turnTimer", null);
             return;
         }
-        const cur = state.players[state.currentPlayer];
+        const cur = lobby.state.players[lobby.state.currentPlayer];
         if (!cur)
             return;
         if (cur.isAI) {
-            aiTimer = setTimeout(stepAI, aiStepMs);
-            io.emit("turnTimer", null);
+            lobby.aiTimer = setTimeout(() => stepAI(lobby), aiStepMs);
+            io.to(lobby.id).emit("turnTimer", null);
             return;
         }
-        const slot = lobby.find((p) => p.id === cur.id);
+        const slot = lobby.players.find((p) => p.id === cur.id);
         if (slot && !slot.connected) {
-            // Humain déconnecté : saut automatique (anti-blocage).
-            aiTimer = setTimeout(forceEndTurn, skipMs);
-            io.emit("turnTimer", null);
+            lobby.aiTimer = setTimeout(() => forceEndTurn(lobby), skipMs);
+            io.to(lobby.id).emit("turnTimer", null);
         }
-        else if (settings.turnSeconds != null) {
-            // Humain connecté avec limite de temps : fin de tour auto à l'expiration.
-            aiTimer = setTimeout(forceEndTurn, settings.turnSeconds * 1000);
-            io.emit("turnTimer", settings.turnSeconds);
+        else if (lobby.settings.turnSeconds != null) {
+            lobby.aiTimer = setTimeout(() => forceEndTurn(lobby), lobby.settings.turnSeconds * 1000);
+            io.to(lobby.id).emit("turnTimer", lobby.settings.turnSeconds);
         }
         else {
-            io.emit("turnTimer", null);
+            io.to(lobby.id).emit("turnTimer", null);
         }
     }
-    function resetGame() {
-        clearTurnTimer();
-        started = false;
-        state = null;
-        endVote = null;
-        io.emit("endVote", null);
-        io.emit("turnTimer", null);
+    function resetGame(lobby) {
+        clearTurnTimer(lobby);
+        lobby.started = false;
+        lobby.state = null;
+        lobby.endVote = null;
+        io.to(lobby.id).emit("endVote", null);
+        io.to(lobby.id).emit("turnTimer", null);
     }
     io.on("connection", (socket) => {
-        socket.on("join", ({ name }) => {
-            if (started) {
-                // Reconnexion : reprendre un slot déconnecté de même nom.
-                const slot = lobby.find((p) => p.name === name && !p.connected);
-                if (slot) {
-                    slot.connected = true;
-                    socketToPlayer.set(socket.id, slot);
-                    socket.emit("assigned", slot.id);
-                    if (state)
-                        socket.emit("state", state);
-                    broadcastLobby();
-                    driveTurn(); // annule un éventuel saut auto si le revenant est de tour
+        socket.on("join", ({ name, sessionId }) => {
+            socketSessions.set(socket.id, { sessionId, name: name || "Joueur" });
+            // Chercher si le joueur était déjà dans un lobby avec ce sessionId
+            let foundLobby = null;
+            let foundPlayer = null;
+            for (const lobby of lobbies.values()) {
+                const pid = lobby.sessionToPlayerId.get(sessionId);
+                if (pid !== undefined) {
+                    foundLobby = lobby;
+                    foundPlayer = lobby.players.find(p => p.id === pid) || null;
+                    break;
                 }
-                else {
-                    socket.emit("errorMsg", "Partie déjà lancée.");
-                }
-                return;
             }
-            if (lobby.length >= MAX_PLAYERS) {
-                socket.emit("errorMsg", "Lobby plein.");
-                return;
+            if (foundLobby && foundPlayer) {
+                socketSessions.set(socket.id, { sessionId, name: foundPlayer.name, lobbyId: foundLobby.id });
+                socket.join(foundLobby.id);
+                foundPlayer.connected = true;
+                socket.emit("joinedLobby", foundLobby.id);
+                socket.emit("assigned", foundPlayer.id);
+                if (foundLobby.state)
+                    socket.emit("state", foundLobby.state);
+                broadcastLobby(foundLobby);
+                driveTurn(foundLobby);
             }
+            else {
+                socket.emit("lobbiesList", getLobbyInfoList());
+            }
+        });
+        socket.on("getLobbies", () => {
+            socket.emit("lobbiesList", getLobbyInfoList());
+        });
+        socket.on("createLobby", ({ name, password }) => {
+            const sess = socketSessions.get(socket.id);
+            if (!sess)
+                return;
+            const lobbyId = randomUUID().substring(0, 8);
+            const lobby = new LobbySession(lobbyId, name || "Partie de " + sess.name, password);
+            lobbies.set(lobbyId, lobby);
+            sess.lobbyId = lobbyId;
+            socket.join(lobbyId);
             const player = {
-                id: lobby.length,
-                name: name || `Joueur ${lobby.length + 1}`,
-                color: pickColor(),
+                id: 0,
+                name: sess.name,
+                color: pickColor(lobby),
                 connected: true,
                 isAI: false,
             };
-            lobby.push(player);
-            socketToPlayer.set(socket.id, player);
+            lobby.players.push(player);
+            lobby.sessionToPlayerId.set(sess.sessionId, player.id);
+            socket.emit("joinedLobby", lobbyId);
             socket.emit("assigned", player.id);
-            broadcastLobby();
+            broadcastLobby(lobby);
+            broadcastLobbiesList();
+        });
+        socket.on("joinLobby", ({ lobbyId, password }) => {
+            const sess = socketSessions.get(socket.id);
+            if (!sess)
+                return;
+            const lobby = lobbies.get(lobbyId);
+            if (!lobby) {
+                socket.emit("errorMsg", "Lobby introuvable.");
+                return;
+            }
+            if (lobby.password && lobby.password !== password) {
+                socket.emit("errorMsg", "Mot de passe incorrect.");
+                return;
+            }
+            if (lobby.started) {
+                socket.emit("errorMsg", "Partie déjà lancée.");
+                return;
+            }
+            if (lobby.players.length >= MAX_PLAYERS) {
+                socket.emit("errorMsg", "Lobby plein.");
+                return;
+            }
+            sess.lobbyId = lobbyId;
+            socket.join(lobbyId);
+            const player = {
+                id: lobby.players.length,
+                name: sess.name,
+                color: pickColor(lobby),
+                connected: true,
+                isAI: false,
+            };
+            lobby.players.push(player);
+            lobby.sessionToPlayerId.set(sess.sessionId, player.id);
+            socket.emit("joinedLobby", lobbyId);
+            socket.emit("assigned", player.id);
+            broadcastLobby(lobby);
+            broadcastLobbiesList();
+        });
+        socket.on("leaveLobby", () => {
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
+                return;
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby)
+                return;
+            const pid = lobby.sessionToPlayerId.get(sess.sessionId);
+            if (pid !== undefined) {
+                const player = lobby.players.find(p => p.id === pid);
+                if (player) {
+                    if (lobby.started) {
+                        player.connected = false;
+                    }
+                    else {
+                        const idx = lobby.players.indexOf(player);
+                        if (idx >= 0)
+                            lobby.players.splice(idx, 1);
+                        lobby.sessionToPlayerId.delete(sess.sessionId);
+                        reassignIds(lobby);
+                    }
+                }
+            }
+            socket.leave(sess.lobbyId);
+            sess.lobbyId = undefined;
+            socket.emit("lobbiesList", getLobbyInfoList());
+            const connectedHumans = lobby.players.filter((p) => !p.isAI && p.connected);
+            if (connectedHumans.length === 0) {
+                lobbies.delete(lobby.id);
+                broadcastLobbiesList();
+            }
+            else {
+                broadcastLobby(lobby);
+                driveTurn(lobby);
+            }
         });
         socket.on("addBot", () => {
-            if (!isHost(socket.id) || started || lobby.length >= MAX_PLAYERS)
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
                 return;
-            const id = lobby.length;
-            lobby.push({
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby || !isHost(lobby, socket.id) || lobby.started || lobby.players.length >= MAX_PLAYERS)
+                return;
+            const id = lobby.players.length;
+            lobby.players.push({
                 id,
                 name: `IA ${id + 1}`,
-                color: pickColor(),
+                color: pickColor(lobby),
                 connected: true,
                 isAI: true,
             });
-            broadcastLobby();
+            broadcastLobby(lobby);
         });
         socket.on("removeBot", () => {
-            if (!isHost(socket.id) || started)
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
                 return;
-            if (lobby.at(-1)?.isAI) {
-                lobby.pop();
-                broadcastLobby();
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby || !isHost(lobby, socket.id) || lobby.started)
+                return;
+            if (lobby.players.at(-1)?.isAI) {
+                lobby.players.pop();
+                broadcastLobby(lobby);
             }
         });
         socket.on("kick", (playerId) => {
-            if (!isHost(socket.id) || started)
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
                 return;
-            const target = lobby[playerId];
-            if (!target || target === lobby[0])
-                return; // ni inconnu, ni l'hôte lui-même
-            const sid = socketIdOf(target);
-            lobby.splice(playerId, 1);
-            if (sid) {
-                socketToPlayer.delete(sid);
-                io.to(sid).emit("kicked", "Vous avez été exclu par l'hôte.");
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby || !isHost(lobby, socket.id) || lobby.started)
+                return;
+            const target = lobby.players[playerId];
+            if (!target || target === lobby.players[0])
+                return;
+            // Trouver la session du joueur kick
+            let targetSid = null;
+            let targetSessionId = null;
+            for (const [sId, pid] of lobby.sessionToPlayerId.entries()) {
+                if (pid === playerId) {
+                    targetSessionId = sId;
+                    break;
+                }
             }
-            reassignIds();
-            broadcastLobby();
+            if (targetSessionId) {
+                for (const [sid, session] of socketSessions.entries()) {
+                    if (session.sessionId === targetSessionId) {
+                        targetSid = sid;
+                        break;
+                    }
+                }
+            }
+            lobby.players.splice(playerId, 1);
+            if (targetSessionId)
+                lobby.sessionToPlayerId.delete(targetSessionId);
+            if (targetSid) {
+                io.to(targetSid).emit("kicked", "Vous avez été exclu par l'hôte.");
+                const targetSess = socketSessions.get(targetSid);
+                if (targetSess) {
+                    io.sockets.sockets.get(targetSid)?.leave(lobby.id);
+                    targetSess.lobbyId = undefined;
+                    io.to(targetSid).emit("lobbiesList", getLobbyInfoList());
+                }
+            }
+            reassignIds(lobby);
+            broadcastLobby(lobby);
         });
         socket.on("setSettings", (s) => {
-            if (!isHost(socket.id) || started)
-                return; // seul l'hôte, avant lancement
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
+                return;
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby || !isHost(lobby, socket.id) || lobby.started)
+                return;
             const mapType = s.mapType === "continents" || s.mapType === "archipel" ? s.mapType : "terres";
-            settings = {
+            lobby.settings = {
                 turnLimit: s.turnLimit == null ? null : Math.max(1, Math.floor(s.turnLimit)),
                 turnSeconds: s.turnSeconds == null ? null : Math.max(5, Math.floor(s.turnSeconds)),
                 mapSize: s.mapSize == null ? null : Math.max(8, Math.min(28, Math.floor(s.mapSize))),
                 mapType,
             };
-            broadcastLobby();
+            broadcastLobby(lobby);
         });
         socket.on("start", () => {
-            if (!isHost(socket.id))
-                return; // seul l'hôte lance
-            if (started || lobby.length < 2)
-                return; // au moins 2 joueurs (humains + IA)
-            reassignIds();
-            started = true;
-            endVote = null;
-            const size = settings.mapSize ?? mapSizeForPlayers(lobby.length, settings.mapType);
-            state = createInitialState({
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
+                return;
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby || !isHost(lobby, socket.id))
+                return;
+            if (lobby.started || lobby.players.length < 2)
+                return;
+            reassignIds(lobby);
+            lobby.started = true;
+            lobby.endVote = null;
+            const size = lobby.settings.mapSize ?? mapSizeForPlayers(lobby.players.length, lobby.settings.mapType);
+            lobby.state = createInitialState({
                 seed: Date.now() & 0xffffffff,
                 width: size,
                 height: size,
-                turnLimit: settings.turnLimit,
-                mapType: settings.mapType,
-                playerInfos: lobby.map((p) => ({ name: p.name, color: p.color, isAI: p.isAI })),
+                turnLimit: lobby.settings.turnLimit,
+                mapType: lobby.settings.mapType,
+                playerInfos: lobby.players.map((p) => ({ name: p.name, color: p.color, isAI: p.isAI })),
             });
-            broadcastLobby();
-            broadcastState();
-            io.emit("endVote", null);
-            driveTurn(); // si le joueur 0 est une IA / démarre le minuteur de tour
+            broadcastLobby(lobby);
+            broadcastState(lobby);
+            io.to(lobby.id).emit("endVote", null);
+            driveTurn(lobby);
+            broadcastLobbiesList();
         });
         socket.on("action", (action) => {
-            const player = socketToPlayer.get(socket.id);
-            if (!started || !state || !player) {
-                socket.emit("errorMsg", "Partie non démarrée.");
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
                 return;
-            }
-            if (player.id !== state.currentPlayer) {
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby || !lobby.started || !lobby.state)
+                return;
+            const pid = lobby.sessionToPlayerId.get(sess.sessionId);
+            if (pid === undefined || pid !== lobby.state.currentPlayer) {
                 socket.emit("errorMsg", "Ce n'est pas votre tour.");
                 return;
             }
-            if (!isLegal(state, action)) {
+            if (!isLegal(lobby.state, action)) {
                 socket.emit("errorMsg", `Action illégale : ${action.type}`);
                 return;
             }
             try {
-                state = applyAction(state, action);
+                lobby.state = applyAction(lobby.state, action);
+                broadcastActionLog(lobby, action, pid);
             }
             catch (e) {
                 console.error("[server] applyAction a échoué", e);
                 socket.emit("errorMsg", "Erreur interne sur l'action.");
                 return;
             }
-            broadcastState();
-            driveTurn(); // le tour peut être passé à une IA
+            broadcastState(lobby);
+            driveTurn(lobby);
         });
         socket.on("reset", () => {
-            if (!isHost(socket.id))
-                return; // seul l'hôte
-            resetGame();
-            broadcastLobby();
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
+                return;
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby || !isHost(lobby, socket.id))
+                return;
+            resetGame(lobby);
+            broadcastLobby(lobby);
+            broadcastLobbiesList();
         });
         socket.on("endVoteStart", () => {
-            const player = socketToPlayer.get(socket.id);
-            if (!started || !state || !player || player.isAI)
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
                 return;
-            if (state.turnLimit !== null)
-                return; // vote réservé au mode infini
-            if (checkVictory(state).over || endVote)
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby || !lobby.started || !lobby.state)
                 return;
-            const humans = connectedHumanCount();
-            const needed = Math.floor(humans / 2) + 1; // strictement plus de la moitié
-            endVote = { approve: new Set([player.id]), decline: new Set(), needed, humans };
-            evaluateEndVote();
+            const pid = lobby.sessionToPlayerId.get(sess.sessionId);
+            if (pid === undefined)
+                return;
+            const player = lobby.players.find(p => p.id === pid);
+            if (!player || player.isAI)
+                return;
+            if (lobby.state.turnLimit !== null)
+                return;
+            if (checkVictory(lobby.state).over || lobby.endVote)
+                return;
+            const humans = connectedHumanCount(lobby);
+            const needed = Math.floor(humans / 2) + 1;
+            lobby.endVote = { approve: new Set([player.id]), decline: new Set(), needed, humans };
+            evaluateEndVote(lobby);
         });
         socket.on("endVoteCast", (approve) => {
-            const player = socketToPlayer.get(socket.id);
-            if (!started || !player || player.isAI || !endVote)
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
                 return;
-            endVote.approve.delete(player.id);
-            endVote.decline.delete(player.id);
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby || !lobby.started || !lobby.endVote)
+                return;
+            const pid = lobby.sessionToPlayerId.get(sess.sessionId);
+            if (pid === undefined)
+                return;
+            lobby.endVote.approve.delete(pid);
+            lobby.endVote.decline.delete(pid);
             if (approve)
-                endVote.approve.add(player.id);
+                lobby.endVote.approve.add(pid);
             else
-                endVote.decline.add(player.id);
-            evaluateEndVote();
+                lobby.endVote.decline.add(pid);
+            evaluateEndVote(lobby);
+        });
+        socket.on("sendChat", (text) => {
+            const sess = socketSessions.get(socket.id);
+            if (!sess || !sess.lobbyId)
+                return;
+            const lobby = lobbies.get(sess.lobbyId);
+            if (!lobby || !lobby.started)
+                return;
+            const pid = lobby.sessionToPlayerId.get(sess.sessionId);
+            if (pid === undefined)
+                return;
+            io.to(lobby.id).emit("chatMessage", {
+                id: `chat-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                senderId: pid,
+                text,
+                timestamp: Date.now(),
+            });
         });
         socket.on("disconnect", () => {
-            const player = socketToPlayer.get(socket.id);
-            socketToPlayer.delete(socket.id);
-            if (player) {
-                if (started) {
-                    player.connected = false; // garde le slot pour reconnexion
+            const sess = socketSessions.get(socket.id);
+            socketSessions.delete(socket.id);
+            if (sess && sess.lobbyId) {
+                const lobby = lobbies.get(sess.lobbyId);
+                if (lobby) {
+                    const pid = lobby.sessionToPlayerId.get(sess.sessionId);
+                    if (pid !== undefined) {
+                        const player = lobby.players.find(p => p.id === pid);
+                        if (player) {
+                            if (lobby.started) {
+                                player.connected = false;
+                            }
+                            else {
+                                const idx = lobby.players.indexOf(player);
+                                if (idx >= 0)
+                                    lobby.players.splice(idx, 1);
+                                lobby.sessionToPlayerId.delete(sess.sessionId);
+                                reassignIds(lobby);
+                            }
+                        }
+                    }
+                    const connectedHumans = lobby.players.filter((p) => !p.isAI && p.connected);
+                    if (connectedHumans.length === 0) {
+                        lobbies.delete(lobby.id);
+                        broadcastLobbiesList();
+                    }
+                    else {
+                        broadcastLobby(lobby);
+                        driveTurn(lobby);
+                    }
                 }
-                else {
-                    const idx = lobby.indexOf(player);
-                    if (idx >= 0)
-                        lobby.splice(idx, 1); // avant lancement : on libère la place
-                    reassignIds();
-                }
-            }
-            // Reset complet quand plus aucun humain n'est connecté (les bots ne comptent pas).
-            const connectedHumans = lobby.filter((p) => !p.isAI && p.connected);
-            if (connectedHumans.length === 0) {
-                lobby.length = 0;
-                socketToPlayer.clear();
-                settings = { ...DEFAULT_GAME_SETTINGS };
-                resetGame();
-            }
-            else {
-                broadcastLobby();
-                driveTurn(); // si le déconnecté était de tour, programme le saut auto
             }
         });
     });

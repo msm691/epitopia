@@ -1,1 +1,1 @@
-{"version":3,"file":"isLegal.d.ts","sourceRoot":"","sources":["../src/isLegal.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,OAAO,KAAK,EACV,MAAM,EAQN,SAAS,EAKV,MAAM,mBAAmB,CAAC;AAwB3B,wBAAgB,OAAO,CAAC,KAAK,EAAE,SAAS,EAAE,MAAM,EAAE,MAAM,GAAG,OAAO,CAsCjE"}
+{"version":3,"file":"isLegal.d.ts","sourceRoot":"","sources":["../src/isLegal.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,OAAO,KAAK,EACV,MAAM,EAQN,SAAS,EAYV,MAAM,mBAAmB,CAAC;AA2B3B,wBAAgB,OAAO,CAAC,KAAK,EAAE,SAAS,EAAE,MAAM,EAAE,MAAM,GAAG,OAAO,CA8DjE"}

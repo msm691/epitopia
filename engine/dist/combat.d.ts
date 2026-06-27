@@ -7,11 +7,13 @@
 import type { GameState, Unit } from "@polytopia/shared";
 /** PV maximum d'une unité (= stat de base de son type). */
 export declare function maxHp(unit: Unit): number;
+export declare function getUnitAttack(state: GameState, unit: Unit): number;
+export declare function getUnitDefense(unit: Unit): number;
 /**
  * Dégâts qu'une unité inflige à un REMPART (siège). Pas de riposte du rempart.
  * Force modulée par les PV de l'attaquant ; au moins 1. Catapulte/géant excellent.
  */
-export declare function computeWallDamage(attacker: Unit): number;
+export declare function computeWallDamage(state: GameState, attacker: Unit): number;
 /**
  * Bonus de défense d'une unité selon sa case : ville ou terrain (forêt/montagne).
  * On garde le MEILLEUR bonus applicable (pas de cumul). 1 = aucun bonus.
@@ -31,5 +33,5 @@ export interface CombatResult {
  * Calcule l'issue d'une attaque.
  * @param isMelee attaque au corps-à-corps (attaquant adjacent) -> riposte possible.
  */
-export declare function computeCombat(attacker: Unit, defender: Unit, isMelee: boolean, defenseBonus?: number): CombatResult;
+export declare function computeCombat(state: GameState, attacker: Unit, defender: Unit, isMelee: boolean, defenseBonus?: number): CombatResult;
 //# sourceMappingURL=combat.d.ts.map
