@@ -288,29 +288,59 @@ export function App() {
             </div>
           </div>
         </div>
-
-        <div className="settings-grid" style={{ marginTop: "1rem" }}>
-          <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <span className="setting-label">⛈️ Météo Dynamique</span>
-            <input type="checkbox" disabled={!isHost} checked={!!lobby.settings.weatherEnabled} onChange={(e) => updateSettings({ weatherEnabled: e.target.checked })} />
-          </div>
-          <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <span className="setting-label">🐉 Boss Mythologiques</span>
-            <input type="checkbox" disabled={!isHost} checked={!!lobby.settings.bossesEnabled} onChange={(e) => updateSettings({ bossesEnabled: e.target.checked })} />
-          </div>
-          <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <span className="setting-label">🗡️ Mode RPG (Héros)</span>
-            <input type="checkbox" disabled={!isHost} checked={!!lobby.settings.rpgModeEnabled} onChange={(e) => updateSettings({ rpgModeEnabled: e.target.checked })} />
-          </div>
-          <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <span className="setting-label">🏛️ Merveilles Exclusives</span>
-            <input type="checkbox" disabled={!isHost} checked={!!lobby.settings.wondersEnabled} onChange={(e) => updateSettings({ wondersEnabled: e.target.checked })} />
-          </div>
-          <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <span className="setting-label">⚓ Batailles Navales (Galions)</span>
-            <input type="checkbox" disabled={!isHost} checked={!!lobby.settings.navalCombatEnabled} onChange={(e) => updateSettings({ navalCombatEnabled: e.target.checked })} />
-          </div>
-        </div>
+        
+        {/* Helper function for the toggles */}
+        {(() => {
+          const Toggle = ({ checked, onChange }: { checked: boolean, onChange: (c: boolean) => void }) => {
+            const topColor = checked ? "#4CAF50" : "#F44336";
+            const botColor = checked ? "#388E3C" : "#D32F2F";
+            const lipColor = checked ? "#2E7D32" : "#B71C1C";
+            return (
+              <button
+                disabled={!isHost}
+                onClick={() => onChange(!checked)}
+                style={{
+                  "--btn-top": topColor,
+                  "--btn-bot": botColor,
+                  "--btn-lip": lipColor,
+                  "--btn-fg": "white",
+                  padding: "0.25rem 0.75rem",
+                  cursor: !isHost ? "not-allowed" : "pointer",
+                  opacity: !isHost ? 0.6 : 1,
+                  width: "70px",
+                  fontWeight: "bold",
+                } as React.CSSProperties}
+              >
+                {checked ? "OUI" : "NON"}
+              </button>
+            );
+          };
+          
+          return (
+            <div className="settings-grid" style={{ marginTop: "1rem" }}>
+              <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <span className="setting-label">⛈️ Météo Dynamique</span>
+                <Toggle checked={!!lobby.settings.weatherEnabled} onChange={(v) => updateSettings({ weatherEnabled: v })} />
+              </div>
+              <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <span className="setting-label">🐉 Boss Mythologiques</span>
+                <Toggle checked={!!lobby.settings.bossesEnabled} onChange={(v) => updateSettings({ bossesEnabled: v })} />
+              </div>
+              <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <span className="setting-label">🗡️ Mode RPG (Héros)</span>
+                <Toggle checked={!!lobby.settings.rpgModeEnabled} onChange={(v) => updateSettings({ rpgModeEnabled: v })} />
+              </div>
+              <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <span className="setting-label">🏛️ Merveilles Exclusives</span>
+                <Toggle checked={!!lobby.settings.wondersEnabled} onChange={(v) => updateSettings({ wondersEnabled: v })} />
+              </div>
+              <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <span className="setting-label">⚓ Batailles Navales (Galions)</span>
+                <Toggle checked={!!lobby.settings.navalCombatEnabled} onChange={(v) => updateSettings({ navalCombatEnabled: v })} />
+              </div>
+            </div>
+          );
+        })()}
 
         {isHost ? (
           <div className="actions">
