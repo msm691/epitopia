@@ -7,5 +7,6 @@ export default defineConfig({
     // Accessible depuis le LAN ou internet
     host: true,
     port: 80,
+    allowedHosts: ["epitopia.fr", "www.epitopia.fr"],
   },
 });
