@@ -243,13 +243,13 @@ function Sun() {
   );
 }
 
-export function MenuBackground() {
+export function MenuBackground({ perfMode }: { perfMode?: boolean }) {
   return (
     <div className="menu-bg" aria-hidden>
       <Canvas
-        dpr={[1, 1.4]}
+        dpr={perfMode ? [0.75, 1] : [1, 1.4]}
         camera={{ fov: 42, position: [0, 3.6, 9], near: 0.1, far: 100 }}
-        gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
+        gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15, antialias: !perfMode }}
       >
         <color attach="background" args={["#f3b07a"]} />
         <fog attach="fog" args={["#f0a878", 14, 42]} />
@@ -267,9 +267,11 @@ export function MenuBackground() {
         <Island />
         <Sea />
         <Clouds />
-        <EffectComposer>
-          <Bloom intensity={0.9} luminanceThreshold={0.6} luminanceSmoothing={0.3} mipmapBlur />
-        </EffectComposer>
+        {!perfMode && (
+          <EffectComposer>
+            <Bloom intensity={0.9} luminanceThreshold={0.6} luminanceSmoothing={0.3} mipmapBlur />
+          </EffectComposer>
+        )}
       </Canvas>
     </div>
   );

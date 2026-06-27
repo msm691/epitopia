@@ -52,6 +52,7 @@ export interface Scene3DProps {
   overlay: Overlay;
   onTileClick: (coord: Coord) => void;
   focus?: Coord | undefined;
+  perfMode?: boolean;
 }
 
 const noRaycast = () => null;
@@ -341,7 +342,7 @@ const CameraRig = forwardRef<Scene3DHandle, { state: GameState; focus?: Coord | 
 // ---------------------------------------------------------------------------
 
 export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
-  { state, overlay, onTileClick, focus },
+  { state, overlay, onTileClick, focus, perfMode },
   ref,
 ) {
   // Détection clic vs glissement (le drag pilote la caméra, le tap sélectionne).
@@ -370,14 +371,14 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
 
   return (
     <Canvas
-      shadows
+      shadows={!perfMode}
       // DPR plafonné à 1.5 : sur écrans Retina/mobile, 2x = 4x de pixels à
       // calculer. 1.5 reste net et réduit fortement la charge GPU (fluidité).
-      dpr={[1, 1.5]}
+      dpr={perfMode ? [0.75, 1] : [1, 1.5]}
       camera={{ fov: 45, near: 0.1, far: 1000, position: [0, 18, 14] }}
       // Rendu plus riche : ACES + exposition. Les overlays/HUD restent en
       // toneMapped={false} pour garder des couleurs vives.
-      gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
+      gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05, antialias: !perfMode }}
       onPointerDown={(e) => {
         downPos.current = { x: e.clientX, y: e.clientY };
       }}
@@ -408,7 +409,7 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         color="#fff3d6"
         position={[14, 22, 9]}
         intensity={1.25}
-        castShadow
+        castShadow={!perfMode}
         shadow-mapSize={[1024, 1024]}
         shadow-bias={-0.0004}
         shadow-normalBias={0.04}
@@ -442,14 +443,16 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
 
       {/* Bloom doux : fait « briller » les zones lumineuses (orbes des sages,
           récompenses, gemmes) sans alourdir le rendu (mipmapBlur = cheap). */}
-      <EffectComposer>
-        <Bloom
-          intensity={0.55}
-          luminanceThreshold={0.9}
-          luminanceSmoothing={0.2}
-          mipmapBlur
-        />
-      </EffectComposer>
+      {!perfMode && (
+        <EffectComposer>
+          <Bloom
+            intensity={0.55}
+            luminanceThreshold={0.9}
+            luminanceSmoothing={0.2}
+            mipmapBlur
+          />
+        </EffectComposer>
+      )}
     </Canvas>
   );
 });

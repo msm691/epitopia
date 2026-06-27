@@ -150,6 +150,8 @@ export interface GameViewProps {
   onEndVoteCast: (approve: boolean) => void;
   /** Quitte la partie en cours pour revenir au menu. */
   onLeaveGame?: () => void;
+  /** Mode performance pour petits PC. */
+  perfMode?: boolean;
 }
 
 export function GameView({
@@ -163,6 +165,7 @@ export function GameView({
   onEndVoteStart,
   onEndVoteCast,
   onLeaveGame,
+  perfMode,
 }: GameViewProps) {
   const [selected, setSelected] = useState<Coord | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -475,6 +478,7 @@ export function GameView({
       <div className="viewport" onContextMenu={(e) => e.preventDefault()}>
         <Scene3D
           ref={sceneRef}
+          perfMode={perfMode}
           state={visualState}
           overlay={overlay}
           onTileClick={onTileClick}

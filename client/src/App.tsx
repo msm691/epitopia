@@ -50,6 +50,16 @@ export function App() {
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
+  const [perfMode, setPerfMode] = useState(() => localStorage.getItem("epitopia_perf") === "true");
+
+  const togglePerf = () => {
+    setPerfMode((p) => {
+      const newVal = !p;
+      localStorage.setItem("epitopia_perf", String(newVal));
+      return newVal;
+    });
+  };
+
   // Auto-reconnect if we already have a name in local storage
   useEffect(() => {
     if (name.trim()) {
@@ -173,6 +183,7 @@ export function App() {
           myId={myId}
           send={send}
           isHost={isHost}
+          perfMode={perfMode}
           onNewGame={newGame}
           onLeaveGame={leaveLobby}
           turnSeconds={turnSeconds}
@@ -196,7 +207,10 @@ export function App() {
     const full = total >= lobby.maxPlayers;
     return (
       <>
-        <MenuBackground />
+        <button className="perf-btn" onClick={togglePerf} title="Mode Performance (Graphismes réduits)">
+          {perfMode ? "⚡ Mode Perf: ON" : "✨ Mode Perf: OFF"}
+        </button>
+        <MenuBackground perfMode={perfMode} />
         <div className="app">
           <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: "min(90vw, 1000px)", margin: "0 auto"}}>
             <h1>{lobby.name}</h1>
@@ -392,11 +406,14 @@ export function App() {
     );
   }
 
-  // --- Phase 2 : Lobby Browser ---
-  if (connected && inLobbyBrowser) {
+  // --- Phase 2 : navigateur de parties ---
+  if (inLobbyBrowser) {
     return (
       <>
-        <MenuBackground />
+        <button className="perf-btn" onClick={togglePerf} title="Mode Performance (Graphismes réduits)">
+          {perfMode ? "⚡ Mode Perf: ON" : "✨ Mode Perf: OFF"}
+        </button>
+        <MenuBackground perfMode={perfMode} />
         <div className="app">
           {error && <p className="error" style={{marginBottom: "1rem"}}>{error}</p>}
           <LobbyBrowser 
@@ -419,7 +436,10 @@ export function App() {
   // --- Phase 1 : menu de connexion ---
   return (
     <>
-      <MenuBackground />
+      <button className="perf-btn" onClick={togglePerf} title="Mode Performance (Graphismes réduits)">
+        {perfMode ? "⚡ Mode Perf: ON" : "✨ Mode Perf: OFF"}
+      </button>
+      <MenuBackground perfMode={perfMode} />
       <div className="app">
         <h1>Epitopia</h1>
       {error && <p className="error">{error}</p>}
