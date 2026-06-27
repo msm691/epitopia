@@ -491,8 +491,7 @@ export function GameView({
         </span>
         <span className="pill stars">⭐ {me?.stars}</span>
         {me?.culture !== undefined && <span className="pill culture" title="Culture">🎭 {me.culture}</span>}
-        {me?.strategicResources?.includes("fer") && <span className="pill" title="Fer">⛏️</span>}
-        {me?.strategicResources?.includes("chevaux") && <span className="pill" title="Chevaux">🐎</span>}
+
         {remaining != null && (
           <span className={`pill timer${remaining <= 5 ? " low" : ""}`}>⏱ {remaining}s</span>
         )}
@@ -501,7 +500,11 @@ export function GameView({
           <button
             className="icon-btn"
             title="Proposer de terminer la partie (vote à la majorité)"
-            onClick={onEndVoteStart}
+            onClick={() => {
+              if (window.confirm("Voulez-vous vraiment proposer de terminer la partie ?")) {
+                onEndVoteStart();
+              }
+            }}
           >
             🏁
           </button>
@@ -682,11 +685,7 @@ export function GameView({
               const build = unitBuildTurns(type);
               let lockReason = "";
               if (!legal) {
-                if (me && (type === "epeiste" || type === "catapulte") && !me.strategicResources?.includes("fer")) {
-                  lockReason = "Nécessite la ressource Fer (⛏️) dans votre empire.";
-                } else if (me && (type === "cavalier" || type === "chevalier") && !me.strategicResources?.includes("chevaux")) {
-                  lockReason = "Nécessite la ressource Chevaux (🐎) dans votre empire.";
-                } else if (me && me.stars < UNIT_STATS[type].cost) {
+                if (me && me.stars < UNIT_STATS[type].cost) {
                   lockReason = "Pas assez d'étoiles.";
                 } else if (type === "hero" && (me?.heroStatus === "alive" || me?.heroStatus === "dead")) {
                   lockReason = "Héros déjà recruté.";
@@ -1044,11 +1043,16 @@ export function GameView({
                 })}
             </ol>
             {isHost ? (
-              <button className="primary" onClick={onNewGame}>
-                Nouvelle partie
+              <button className="primary" onClick={onNewGame} style={{ marginTop: "1rem", marginRight: "1rem" }}>
+                Relancer une partie
               </button>
             ) : (
               <p className="hint">En attente d'une nouvelle partie lancée par l'hôte…</p>
+            )}
+            {onLeaveGame && (
+              <button className="secondary" onClick={() => { if (window.confirm("Quitter la partie ?")) onLeaveGame(); }} style={{ marginTop: "1rem" }}>
+                Quitter la partie
+              </button>
             )}
           </div>
         </div>

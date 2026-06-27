@@ -505,17 +505,15 @@ function rollResource(rng: Rng, terrain: Terrain): Resource | undefined {
   switch (terrain) {
     case "champ": {
       const r = rng.next();
-      if (r < 0.4) return "fruits";
-      if (r < 0.8) return "cereales";
-      return "chevaux";
+      if (r < 0.5) return "fruits";
+      return "cereales";
     }
     case "foret":
       return rng.next() < 0.5 ? "gibier" : "bois";
     case "montagne": {
       const r = rng.next();
-      if (r < 0.4) return "minerai";
-      if (r < 0.8) return "metal";
-      return "fer";
+      if (r < 0.5) return "minerai";
+      return "metal";
     }
     case "eau":
       return "poisson";

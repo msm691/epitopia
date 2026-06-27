@@ -600,12 +600,28 @@ export function createGameServer(port = 3001, opts: GameServerOptions = {}): Pro
         const lobby = lobbies.get(sess.lobbyId);
         if (lobby) {
           const pid = lobby.sessionToPlayerId.get(sess.sessionId);
-          if (pid !== undefined) {
-            const player = lobby.players.find(p => p.id === pid);
-            if (player) {
-              if (lobby.started) {
+
+          let stillConnected = false;
+          for (const s of socketSessions.values()) {
+            if (s.sessionId === sess.sessionId) {
+              stillConnected = true;
+              break;
+            }
+          }
+
+          if (lobby.started) {
+            if (!stillConnected) {
+              const player = lobby.players.find((p) => p.id === pid);
+              if (player) {
                 player.connected = false;
-              } else {
+                broadcastLobby(lobby);
+                driveTurn(lobby);
+              }
+            }
+          } else {
+            if (!stillConnected) {
+              const player = lobby.players.find(p => p.id === pid);
+              if (player) {
                 const idx = lobby.players.indexOf(player);
                 if (idx >= 0) lobby.players.splice(idx, 1);
                 lobby.sessionToPlayerId.delete(sess.sessionId);

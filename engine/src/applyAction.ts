@@ -393,11 +393,7 @@ function harvestResource(state: GameState, action: HarvestResourceAction): GameS
   // Déduit le coût au propriétaire de la ville.
   const players = state.players.map((p) => {
     if (p.id === city.ownerId) {
-      const strategicResources = p.strategicResources || [];
-      const newStrategic = resource === "fer" || resource === "chevaux" 
-        ? (strategicResources.includes(resource) ? strategicResources : [...strategicResources, resource])
-        : strategicResources;
-      return { ...p, stars: p.stars - cost, strategicResources: newStrategic };
+      return { ...p, stars: p.stars - cost };
     }
     return p;
   });

@@ -369,14 +369,7 @@ function isLegalTrain(state: GameState, action: TrainUnitAction): boolean {
     if (!tile || tile.unitId !== undefined) return false;
   }
 
-  // Ressources stratégiques
-  const stratRes = player.strategicResources ?? [];
-  if ((action.unitType === "epeiste" || action.unitType === "catapulte") && !stratRes.includes("fer")) {
-    return false;
-  }
-  if ((action.unitType === "cavalier" || action.unitType === "chevalier") && !stratRes.includes("chevaux")) {
-    return false;
-  }
+  // Ressources stratégiques supprimées pour la V5 (simplification)
 
   return true;
 }

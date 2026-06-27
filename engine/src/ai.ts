@@ -283,9 +283,6 @@ export function nextAIAction(state: GameState, pid: PlayerId): Action {
         if (!isLegal(state, action)) continue;
         const tile = state.tiles[at.y * state.width + at.x];
         let gain = tile?.resource ? RESOURCE_POP_GAIN[tile.resource] : 0;
-        if (tile?.resource === "fer" || tile?.resource === "chevaux") {
-          gain += 100; // Priorité absolue
-        }
         if (gain > bestGain) {
           bestGain = gain;
           bestHarvest = action;
