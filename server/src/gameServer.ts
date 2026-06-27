@@ -28,7 +28,7 @@ import {
 } from "@polytopia/engine";
 
 const DEFAULT_AI_STEP_MS = 350;
-const DEFAULT_SKIP_MS = 8000;
+const DEFAULT_SKIP_MS = 30000;
 
 export interface GameServerOptions {
   aiStepMs?: number;
@@ -364,6 +364,8 @@ export function createGameServer(port = 3001, opts: GameServerOptions = {}): Pro
         if (player) {
           if (lobby.started) {
             player.connected = false;
+            // On libère le slot session pour que le joueur puisse rejoindre d'autres parties
+            lobby.sessionToPlayerId.delete(sess.sessionId);
           } else {
             const idx = lobby.players.indexOf(player);
             if (idx >= 0) lobby.players.splice(idx, 1);

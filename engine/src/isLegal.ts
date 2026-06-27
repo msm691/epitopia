@@ -26,6 +26,10 @@ import type {
   AdoptDoctrineAction,
   BuildRoadAction,
   UpgradeHeroAction,
+  SabotageWallAction,
+  StealTechAction,
+  PoisonCityAction,
+  EstablishTradeRouteAction,
 } from "@polytopia/shared";
 import {
   ALL_CITY_REWARDS,
@@ -111,6 +115,18 @@ export function isLegal(state: GameState, action: Action): boolean {
 
     case "UPGRADE_HERO":
       return isLegalUpgradeHero(state, action);
+
+    case "SABOTAGE_WALL":
+      return isLegalSabotageWall(state, action);
+
+    case "STEAL_TECH":
+      return isLegalStealTech(state, action);
+
+    case "POISON_CITY":
+      return isLegalPoisonCity(state, action);
+
+    case "ESTABLISH_TRADE_ROUTE":
+      return isLegalEstablishTradeRoute(state, action);
 
     default:
       return false;
@@ -199,8 +215,12 @@ function isLegalBuildImprovement(state: GameState, action: BuildImprovementActio
   if (action.improvement === "atelier" && (city.workshops ?? 0) >= MAX_WORKSHOPS) return false;
 
   // Merveilles : une seule fois par partie (tous joueurs confondus)
-  if (action.improvement === "pyramides" || action.improvement === "colosse") {
+  if (["pyramides", "colosse", "grand_phare", "bibliotheque"].includes(action.improvement)) {
     if (state.builtWonders.some(w => w.type === action.improvement)) return false;
+    
+    if (["grand_phare", "bibliotheque"].includes(action.improvement)) {
+      if (!state.wondersEnabled) return false;
+    }
   }
   return true;
 }
@@ -393,7 +413,26 @@ function isLegalMove(state: GameState, action: MoveUnitAction): boolean {
   // embarquer depuis la terre coûte un déplacement terrestre normal (1 case).
   const canNavigate = playerHasTech(state, unit.ownerId, "navigation");
   const naval = isWaterAt(state, from.x, from.y);
-  let reach = naval ? Math.max(unit.movement, NAVAL_MOVEMENT) : unit.movement;
+  
+  if (state.weather === "hiver" && (unit.type === "transport" || unit.type === "galion" || unit.type === "sous-marin" || unit.isEmbarked)) {
+    return false; // Les bateaux sont bloqués dans les glaces
+  }
+  
+  let baseMovement = unit.movement;
+  if (naval && state.builtWonders.some(w => w.type === "grand_phare" && w.ownerId === unit.ownerId)) {
+    baseMovement += 1;
+  }
+  let reach = naval ? Math.max(baseMovement, NAVAL_MOVEMENT + (baseMovement - unit.movement)) : baseMovement;
+  
+  if (state.windDirection && unit.type === "galion") {
+    const dirX = Math.sign(to.x - from.x);
+    const dirY = Math.sign(to.y - from.y);
+    if (dirX === state.windDirection.dx && dirY === state.windDirection.dy && (dirX !== 0 || dirY !== 0)) {
+      reach += 1; // Vent favorable
+    } else if (dirX === -state.windDirection.dx && dirY === -state.windDirection.dy && (dirX !== 0 || dirY !== 0)) {
+      reach = Math.max(1, reach - 1); // Vent de face
+    }
+  }
   
   if (chebyshev(from, to) > reach) {
     if (!naval && hasContinuousRoad(state, from, to, reach * 2)) {
@@ -403,8 +442,9 @@ function isLegalMove(state: GameState, action: MoveUnitAction): boolean {
     }
   }
 
-  // Case d'arrivée franchissable (terre, ou eau si Navigation ; et libre).
-  if (!canEnterTile(state, to.x, to.y, canNavigate)) return false;
+  // En hiver, la glace permet de marcher sur l'eau sans navigation
+  const isWinter = state.weather === "hiver";
+  if (!canEnterTile(state, to.x, to.y, canNavigate || isWinter)) return false;
 
   const destTile = tileAt(state, to.x, to.y);
 
@@ -422,3 +462,41 @@ function isLegalMove(state: GameState, action: MoveUnitAction): boolean {
   return true;
 }
 
+
+function isLegalSabotageWall(state: GameState, action: SabotageWallAction): boolean {
+  const unit = unitById(state, action.unitId);
+  if (!unit || unit.ownerId !== state.currentPlayer || unit.type !== "espion" || unit.hasMoved) return false;
+  const city = state.cities.find((c) => c.id === action.cityId);
+  if (!city || city.ownerId === state.currentPlayer || areAllies(state, state.currentPlayer, city.ownerId)) return false;
+  if ((city.wallHp ?? 0) <= 0) return false;
+  return chebyshev(unit, city) <= 1;
+}
+
+function isLegalStealTech(state: GameState, action: StealTechAction): boolean {
+  const unit = unitById(state, action.unitId);
+  if (!unit || unit.ownerId !== state.currentPlayer || unit.type !== "espion" || unit.hasMoved) return false;
+  const city = state.cities.find((c) => c.id === action.cityId);
+  if (!city || city.ownerId === state.currentPlayer || areAllies(state, state.currentPlayer, city.ownerId)) return false;
+  // Can only steal if the enemy has techs we don't have
+  const myTechs = state.players[state.currentPlayer]?.unlockedTechs || [];
+  const enemyTechs = state.players[city.ownerId]?.unlockedTechs || [];
+  if (!enemyTechs.some((t) => !myTechs.includes(t))) return false;
+  return chebyshev(unit, city) <= 1;
+}
+
+function isLegalPoisonCity(state: GameState, action: PoisonCityAction): boolean {
+  const unit = unitById(state, action.unitId);
+  if (!unit || unit.ownerId !== state.currentPlayer || unit.type !== "espion" || unit.hasMoved) return false;
+  const city = state.cities.find((c) => c.id === action.cityId);
+  if (!city || city.ownerId === state.currentPlayer || areAllies(state, state.currentPlayer, city.ownerId)) return false;
+  if (city.population <= 1 && city.level <= 1) return false; // Too small to poison effectively
+  return chebyshev(unit, city) <= 1;
+}
+
+function isLegalEstablishTradeRoute(state: GameState, action: EstablishTradeRouteAction): boolean {
+  const unit = unitById(state, action.unitId);
+  if (!unit || unit.ownerId !== state.currentPlayer || unit.type !== "caravane" || unit.hasMoved) return false;
+  const city = state.cities.find((c) => c.id === action.cityId);
+  if (!city || city.ownerId === state.currentPlayer || !areAllies(state, state.currentPlayer, city.ownerId)) return false;
+  return chebyshev(unit, city) <= 1;
+}

@@ -428,7 +428,46 @@ export function GameView({
     selectedUnit !== undefined && 
     isLegal(state, { type: "EXPLORE_RUIN", unitId: selectedUnit.id });
 
+  const adjacentCity = selectedUnit ? state.cities.find(c => Math.abs(c.x - selectedUnit.x) <= 1 && Math.abs(c.y - selectedUnit.y) <= 1) : undefined;
+  
+  const canSabotage = selectedUnit && adjacentCity && isLegal(state, { type: "SABOTAGE_WALL", unitId: selectedUnit.id, cityId: adjacentCity.id });
+  const canSteal = selectedUnit && adjacentCity && isLegal(state, { type: "STEAL_TECH", unitId: selectedUnit.id, cityId: adjacentCity.id });
+  const canPoison = selectedUnit && adjacentCity && isLegal(state, { type: "POISON_CITY", unitId: selectedUnit.id, cityId: adjacentCity.id });
+  const canEstablishTrade = selectedUnit && adjacentCity && isLegal(state, { type: "ESTABLISH_TRADE_ROUTE", unitId: selectedUnit.id, cityId: adjacentCity.id });
+
   const hasAction = Boolean(selectedUnit || selectedCity);
+
+  const visualState = useMemo(() => {
+    return {
+      ...state,
+      units: state.units.filter((u) => {
+        if (u.type !== "espion" && u.type !== "sous-marin") return true;
+        if (u.ownerId === myId) return true;
+        
+        if (u.type === "espion") {
+          // Logic for spy detection: if adjacent to an allied city or hero
+          const isDetected = state.cities.some(
+            (c) => c.ownerId === myId && Math.abs(c.x - u.x) <= 1 && Math.abs(c.y - u.y) <= 1
+          ) || state.units.some(
+            (myU) => myU.ownerId === myId && myU.type === "hero" && Math.abs(myU.x - u.x) <= 1 && Math.abs(myU.y - u.y) <= 1
+          );
+          return isDetected;
+        }
+        
+        if (u.type === "sous-marin") {
+          // Logic for submarine detection: adjacent to ANY allied unit or city
+          const isDetected = state.cities.some(
+            (c) => c.ownerId === myId && Math.abs(c.x - u.x) <= 1 && Math.abs(c.y - u.y) <= 1
+          ) || state.units.some(
+            (myU) => myU.ownerId === myId && Math.abs(myU.x - u.x) <= 1 && Math.abs(myU.y - u.y) <= 1
+          );
+          return isDetected;
+        }
+        
+        return true;
+      }),
+    };
+  }, [state, myId]);
 
   return (
     <div className="game">
@@ -436,7 +475,7 @@ export function GameView({
       <div className="viewport" onContextMenu={(e) => e.preventDefault()}>
         <Scene3D
           ref={sceneRef}
-          state={state}
+          state={visualState}
           overlay={overlay}
           onTileClick={onTileClick}
           focus={focus}
@@ -481,6 +520,11 @@ export function GameView({
           Tour {state.turn}
           {state.turnLimit !== null ? ` / ${state.turnLimit}` : " ∞"}
         </span>
+        {state.weather && (
+          <span className="pill" title="Météo actuelle">
+            {state.weather === "hiver" ? "❄️ Hiver" : state.weather === "ete" ? "☀️ Été" : "🌱 Tempéré"}
+          </span>
+        )}
         <span className={`pill${current?.isAI ? " ai-turn" : ""}`}>
           <span className="dot" style={{ background: current?.color }} />
           {isMyTurn
@@ -782,6 +826,26 @@ export function GameView({
               }}
             >
               Capturer la ville
+            </button>
+          )}
+          {canSabotage && selectedUnit && adjacentCity && (
+            <button className="capture" onClick={() => { send({ type: "SABOTAGE_WALL", unitId: selectedUnit.id, cityId: adjacentCity.id }); setSelected(null); }}>
+              💣 Saboter les remparts
+            </button>
+          )}
+          {canSteal && selectedUnit && adjacentCity && (
+            <button className="capture" onClick={() => { send({ type: "STEAL_TECH", unitId: selectedUnit.id, cityId: adjacentCity.id }); setSelected(null); }}>
+              📜 Voler une technologie
+            </button>
+          )}
+          {canPoison && selectedUnit && adjacentCity && (
+            <button className="capture" onClick={() => { send({ type: "POISON_CITY", unitId: selectedUnit.id, cityId: adjacentCity.id }); setSelected(null); }}>
+              ☠️ Empoisonner l'eau (-2 pop)
+            </button>
+          )}
+          {canEstablishTrade && selectedUnit && adjacentCity && (
+            <button className="reward" onClick={() => { send({ type: "ESTABLISH_TRADE_ROUTE", unitId: selectedUnit.id, cityId: adjacentCity.id }); setSelected(null); }}>
+              🐪 Établir Route Commerciale (+💰)
             </button>
           )}
           {selectedUnit && (

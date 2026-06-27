@@ -42,7 +42,7 @@ export function getPlayerIncome(state: GameState, playerId: PlayerId): number {
   }
 
   // Bonus Pyramides (+3 étoiles par tour)
-  if (state.builtWonders.some(w => w.type === "pyramids" && w.ownerId === playerId)) {
+  if (state.builtWonders.some(w => w.type === "pyramides" && w.ownerId === playerId)) {
     income += 3;
   }
 

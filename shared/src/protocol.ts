@@ -17,6 +17,16 @@ export interface GameSettings {
   mapSize: number | null;
   /** Type de carte (proportion terre/eau). */
   mapType: MapType;
+  /** Activation du système météo (Hiver, Été, Tempêtes). */
+  weatherEnabled?: boolean;
+  /** Activation des Boss de Carte mythologiques. */
+  bossesEnabled?: boolean;
+  /** Activation du Mode RPG (Héros et Équipements). */
+  rpgModeEnabled?: boolean;
+  /** Activation des Merveilles du Monde Exclusives. */
+  wondersEnabled?: boolean;
+  /** Activation des Batailles Navales Avancées (Galions, Sous-marins). */
+  navalCombatEnabled?: boolean;
 }
 
 /** État d'un vote de fin de partie (mode infini). */

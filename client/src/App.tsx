@@ -289,6 +289,29 @@ export function App() {
           </div>
         </div>
 
+        <div className="settings-grid" style={{ marginTop: "1rem" }}>
+          <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <span className="setting-label">⛈️ Météo Dynamique</span>
+            <input type="checkbox" disabled={!isHost} checked={!!lobby.settings.weatherEnabled} onChange={(e) => updateSettings({ weatherEnabled: e.target.checked })} />
+          </div>
+          <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <span className="setting-label">🐉 Boss Mythologiques</span>
+            <input type="checkbox" disabled={!isHost} checked={!!lobby.settings.bossesEnabled} onChange={(e) => updateSettings({ bossesEnabled: e.target.checked })} />
+          </div>
+          <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <span className="setting-label">🗡️ Mode RPG (Héros)</span>
+            <input type="checkbox" disabled={!isHost} checked={!!lobby.settings.rpgModeEnabled} onChange={(e) => updateSettings({ rpgModeEnabled: e.target.checked })} />
+          </div>
+          <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <span className="setting-label">🏛️ Merveilles Exclusives</span>
+            <input type="checkbox" disabled={!isHost} checked={!!lobby.settings.wondersEnabled} onChange={(e) => updateSettings({ wondersEnabled: e.target.checked })} />
+          </div>
+          <div className="setting" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <span className="setting-label">⚓ Batailles Navales (Galions)</span>
+            <input type="checkbox" disabled={!isHost} checked={!!lobby.settings.navalCombatEnabled} onChange={(e) => updateSettings({ navalCombatEnabled: e.target.checked })} />
+          </div>
+        </div>
+
         {isHost ? (
           <div className="actions">
             <button onClick={addBot} disabled={full}>

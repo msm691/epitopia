@@ -43,7 +43,14 @@ export type UnitType =
   | "chevalier"
   | "defenseur"
   | "geant"
-  | "hero";
+  | "hero"
+  | "espion"
+  | "caravane"
+  | "galion"
+  | "sous-marin"
+  | "transport"
+  | "dragon"
+  | "kraken";
 
 /** Coordonnée sur la grille carrée. */
 export interface Coord {
@@ -84,7 +91,7 @@ export interface Tile {
 export type CityReward = "atelier" | "tresor" | "troupe" | "muraille" | "agrandir";
 
 /** Améliorations constructibles (action BUILD_IMPROVEMENT, débloquée par Construction). */
-export type ImprovementType = "atelier" | "muraille" | "pyramides" | "colosse";
+export type ImprovementType = "atelier" | "muraille" | "pyramides" | "colosse" | "grand_phare" | "bibliotheque";
 
 /** Une ville. */
 export interface City {
@@ -229,4 +236,18 @@ export interface GameState {
   };
   /** Événements globaux ou locaux en cours. */
   activeEvents?: { type: string; msg: string; expiresAtTurn: number }[];
+  /** Activation du système météo (Hiver, Été, Tempêtes). */
+  weatherEnabled?: boolean;
+  /** Activation des Boss de Carte mythologiques. */
+  bossesEnabled?: boolean;
+  /** Activation du Mode RPG (Héros et Équipements). */
+  rpgModeEnabled?: boolean;
+  /** Activation des Merveilles du Monde Exclusives. */
+  wondersEnabled?: boolean;
+  /** Activation des Batailles Navales Avancées. */
+  navalCombatEnabled?: boolean;
+  /** Météo actuelle du jeu (si weatherEnabled). */
+  weather?: "normal" | "hiver" | "ete" | "tempete";
+  /** Direction du vent global (si weatherEnabled). Affecte les voiliers. */
+  windDirection?: { dx: number; dy: number };
 }

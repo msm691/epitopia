@@ -28,6 +28,16 @@ export interface CreateStateOptions {
   turnLimit?: number | null;
   /** Type de carte (proportion terre/eau ; défaut "terres"). */
   mapType?: MapType;
+  /** Activation du système météo (Hiver, Été, Tempêtes). */
+  weatherEnabled?: boolean;
+  /** Activation des Boss de Carte mythologiques. */
+  bossesEnabled?: boolean;
+  /** Activation du Mode RPG (Héros et Équipements). */
+  rpgModeEnabled?: boolean;
+  /** Activation des Merveilles du Monde Exclusives. */
+  wondersEnabled?: boolean;
+  /** Activation des Batailles Navales Avancées. */
+  navalCombatEnabled?: boolean;
 }
 
 export interface PlayerInfo {
@@ -116,25 +126,30 @@ export function createInitialState(options: CreateStateOptions): GameState {
     // l'envoyer ailleurs expose sa ville). Anti-rush.
     const unitId = `u${nextUnitId++}`;
     tile.unitId = unitId;
-    const heroStats = UNIT_STATS.hero;
+    const isHeroMode = options.rpgModeEnabled;
+    const unitType = isHeroMode ? "hero" : "guerrier";
+    const stats = UNIT_STATS[unitType];
+    
     units.push({
       id: unitId,
-      type: "hero",
+      type: unitType,
       ownerId: playerId,
       x: start.x,
       y: start.y,
-      hp: heroStats.hp,
-      attack: heroStats.attack,
-      defense: heroStats.defense,
-      range: heroStats.range,
-      movement: heroStats.movement,
+      hp: stats.hp,
+      attack: stats.attack,
+      defense: stats.defense,
+      range: stats.range,
+      movement: stats.movement,
       hasMoved: false,
       hasAttacked: false,
-      isHero: true,
+      isHero: isHeroMode,
       xp: 0,
       level: 1,
     });
-    players[playerId].heroStatus = "alive";
+    if (isHeroMode) {
+      players[playerId].heroStatus = "alive";
+    }
   });
 
   return {
@@ -149,10 +164,17 @@ export function createInitialState(options: CreateStateOptions): GameState {
     alliances: [],
     peaceProposals: [],
     builtWonders: [],
-    turnLimit: options.turnLimit === undefined ? DEFAULT_TURN_LIMIT : options.turnLimit,
+    turnLimit: options.turnLimit ?? DEFAULT_TURN_LIMIT,
     nextUnitId,
-    nextCityId: 0,
+    nextCityId: players.length, // Commence après les capitales (1 par joueur)
     seed: options.seed,
+    weatherEnabled: options.weatherEnabled ?? false,
+    bossesEnabled: options.bossesEnabled ?? false,
+    rpgModeEnabled: options.rpgModeEnabled ?? false,
+    wondersEnabled: options.wondersEnabled ?? false,
+    navalCombatEnabled: options.navalCombatEnabled ?? false,
+    weather: (options.weatherEnabled ?? false) ? "normal" : undefined,
+    windDirection: (options.weatherEnabled ?? false) ? { dx: 1, dy: 0 } : undefined,
   };
 }
 
