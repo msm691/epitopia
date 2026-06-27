@@ -1070,96 +1070,131 @@ export function GameView({
   );
 }
 
-/** Onglets de l'écran d'aide : contenu PUREMENT descriptif (aucune règle de jeu ici). */
 const HELP_TABS: ReadonlyArray<{ id: string; label: string; body: ReactNode }> = [
   {
     id: "bases",
-    label: "🏁 Bases",
+    label: "🏁 Bases du Jeu",
     body: (
       <ul>
-        <li><b>But du jeu</b> : L'objectif est de développer votre civilisation et de vaincre les autres tribus.</li>
-        <li><b>Tour de jeu</b> : À chaque tour, vous encaissez vos revenus (en <b>⭐ étoiles</b>), déplacez vos unités, attaquez, entraînez des troupes ou bâtissez. Terminez par « Fin de tour ».</li>
-        <li><b>Brouillard de guerre</b> : La carte est cachée. Déplacez vos unités pour révéler de nouveaux territoires, villages et ressources.</li>
-        <li><b>Étoiles (⭐)</b> : La monnaie du jeu. Plus vos villes grandissent, plus vous générez d'étoiles chaque tour. Elles servent à presque tout faire (recruter, rechercher, bâtir).</li>
+        <li><b>Bienvenue sur Epitopia</b> : Epitopia est un jeu de stratégie au tour par tour. L'objectif est d'explorer un monde inconnu, de développer votre empire, et d'écraser vos adversaires.</li>
+        <li><b>Le Tour de Jeu</b> : À chaque tour, vous encaissez vos revenus (en <b>⭐ Étoiles</b>). Vous pouvez ensuite utiliser vos étoiles pour déplacer vos unités, attaquer, recruter des troupes, rechercher des technologies ou récolter des ressources. Cliquez sur <b>Fin de tour</b> quand vous avez terminé.</li>
+        <li><b>Le Brouillard de Guerre</b> : Au début, le monde est plongé dans les nuages. Vous devez déplacer vos unités pour découvrir la carte, trouver des ruines antiques, des villages, et d'autres joueurs.</li>
+        <li><b>Les Étoiles (⭐)</b> : C'est la monnaie vitale du jeu. Vous recevez un montant fixe chaque tour, qui dépend de la taille et du niveau de vos villes. Surveillez bien votre économie, sans or, votre armée sera paralysée !</li>
       </ul>
     ),
   },
   {
     id: "villes",
-    label: "🏙️ Villes",
+    label: "🏙️ Villes & Économie",
     body: (
-      <ul>
-        <li><b>Fonder et Capturer</b> : Posez une unité sur un village (🛖) pour y fonder une nouvelle ville. Capturez une ville ennemie en posant une unité dessus quand elle n'a plus de défenseur.</li>
-        <li><b>Croissance</b> : Récoltez les ressources autour d'une ville (fruits, gibier, etc.) pour augmenter sa population.</li>
-        <li><b>Niveau et Récompenses</b> : Quand la jauge de population est pleine, la ville monte de niveau. Vous gagnez des étoiles bonus de base, et au passage d'un palier, vous devez choisir une récompense puissante (extension de frontière, ateliers, explorateur, or bonus...).</li>
-        <li><b>Construction</b> : Vous pouvez bâtir des <b>Ateliers</b> (qui rapportent de l'or par tour permanent) ou des <b>Murailles</b> (qui forcent l'ennemi à un siège avant de capturer la ville).</li>
-      </ul>
+      <div className="help-scroll-section">
+        <p>Les Villes sont le cœur de votre empire. Sans elles, vous ne gagnez ni étoiles ni unités.</p>
+        <ul>
+          <li><b>Fonder une Ville</b> : Déplacez une unité sur un village gris (🛖) et choisissez l'action "Fonder". Ce village devient alors une ville à vos couleurs avec un territoire qui vous appartient.</li>
+          <li><b>Capturer une Ville Ennemie</b> : Pour voler la ville d'un autre joueur, détruisez l'unité qui la défend et positionnez une de vos unités sur la case centrale. Au tour suivant, la ville est à vous !</li>
+          <li><b>Croissance et Population</b> : Sur le territoire de vos villes, vous trouverez des ressources (🍎 Fruits, 🦌 Gibier, 🐟 Poissons, 🌾 Céréales). En payant des étoiles pour les récolter, vous augmentez la <b>Population</b> de la ville.</li>
+          <li><b>Montée de Niveau</b> : Quand la barre de population d'une ville est pleine, elle monte de niveau. <b>Le niveau définit le nombre d'étoiles (⭐) que la ville produit par tour.</b></li>
+          <li><b>Récompenses de Niveau</b> : À chaque niveau franchi, la ville vous offre un choix puissant (agrandir vos frontières, obtenir un explorateur gratuit, bâtir un atelier, recevoir un gros sac d'or...).</li>
+          <li><b>Améliorations (Ateliers & Remparts)</b> : Si vous recherchez la technologie "Construction", vous pourrez dépenser de l'or pour construire un <b>Atelier</b> (qui booste vos revenus de manière permanente) ou une <b>Muraille</b> (qui ajoute des PV de siège à la ville, empêchant les ennemis d'y entrer).</li>
+        </ul>
+      </div>
     ),
   },
   {
-    id: "combat",
-    label: "⚔️ Combat",
+    id: "unites",
+    label: "⚔️ Unités & Combat",
     body: (
-      <ul>
-        <li><b>Attaque et Riposte</b> : En attaquant au corps-à-corps, le défenseur riposte <i>s'il survit</i>. Pensez à l'attaquer d'abord avec des unités à distance (Archers, Catapultes) qui ne subissent pas de riposte !</li>
-        <li><b>Terrains Défensifs</b> : Se tenir sur une forêt ou une montagne (nécessite les technologies associées) octroie de gros bonus défensifs. Pensez à votre placement.</li>
-        <li><b>Murailles</b> : Une ville fortifiée dispose de PV de rempart. Vous devez d'abord attaquer le rempart pour le détruire. Tant qu'il tient, l'ennemi ne peut pas entrer dans la ville.</li>
-        <li><b>Soin et Vétérans</b> : Les unités regagnent des PV en se reposant (ne pas bouger/attaquer du tour). De plus, tuer 3 ennemis transforme votre unité en <b>Vétéran</b> (PV Max augmentés).</li>
-      </ul>
+      <div className="help-scroll-section">
+        <p>Le combat est impitoyable. Une mauvaise décision peut anéantir votre armée.</p>
+        <ul>
+          <li><b>Recruter</b> : Cliquez sur une de vos villes. Si la case de la ville est libre, vous pourrez y acheter une unité (Guerrier, Archer...). Chaque unité coûte des étoiles. Une ville ne peut produire qu'une seule unité par tour.</li>
+          <li><b>L'Attaque et la Riposte</b> : Quand une unité attaque au corps-à-corps, elle inflige des dégâts. MAIS attention : <b>le défenseur ripostera instantanément</b> s'il n'est pas mort !</li>
+          <li><b>Attaque à Distance</b> : Les Archers et Catapultes peuvent attaquer à plusieurs cases de distance. L'énorme avantage est qu'<b>ils ne subissent aucune riposte</b>.</li>
+          <li><b>Types d'Unités</b> :
+            <ul style={{marginTop:"0.5rem", marginBottom:"0.5rem", marginLeft:"1rem"}}>
+              <li>🛡️ <b>Guerriers</b> : Unités de base, peu coûteuses.</li>
+              <li>🏹 <b>Archers</b> : Frappent à distance (2 cases), mais très fragiles au corps-à-corps.</li>
+              <li>🏇 <b>Cavaliers / Chevaliers</b> : Se déplacent très loin, idéals pour surprendre l'ennemi.</li>
+              <li>⚔️ <b>Épéistes</b> : Unités lourdes et dévastatrices au contact, avec beaucoup de PV.</li>
+              <li>🪨 <b>Catapultes</b> : Portée extrême (3 cases) et dégâts colossaux, mais doivent rester immobiles pour tirer et meurent au moindre coup.</li>
+              <li>👑 <b>Le Héros</b> : Une unité unique surpuissante (statistiques hors-normes) que vous ne pouvez recruter qu'une seule fois dans la partie. Si votre Héros meurt, c'est définitif ! Vous pouvez l'améliorer en accomplissant des Quêtes.</li>
+            </ul>
+          </li>
+          <li><b>Vétérans et Guérison</b> : Si une unité ne fait absolument rien de son tour, elle <b>se repose</b> et récupère des PV. De plus, lorsqu'une unité tue 3 ennemis, elle devient <b>Vétéran</b> : ses Points de Vie Maximum augmentent !</li>
+          <li><b>Bonus de Défense</b> : Les Forêts et les Montagnes offrent un énorme bonus de défense (votre unité subira beaucoup moins de dégâts). Placez vos unités intelligemment pour tenir des positions clés.</li>
+        </ul>
+      </div>
     ),
   },
   {
-    id: "ressources",
-    label: "⛏️ Ressources",
+    id: "tech",
+    label: "🔬 Technologies",
     body: (
-      <ul>
-        <li><b>Ressources Standard</b> : Fruits, Gibiers, Poissons... Ces ressources servent uniquement à augmenter la population de vos villes.</li>
-        <li><b>Ressources Stratégiques (Fer et Chevaux)</b> : Ces ressources spéciales (montagnes et champs) sont cruciales.</li>
-        <li><b>Le Blocage Stratégique</b> : Pour pouvoir recruter des unités lourdes (Épéistes, Catapultes, Chevaliers...), <b>vous devez posséder la ressource dans votre empire</b> (en l'ayant récoltée).</li>
-        <li>Sans Fer ni Chevaux, vous serez restreint à des armées légères (Guerriers, Archers). Étendez vite votre territoire pour sécuriser ces gisements !</li>
-      </ul>
+      <div className="help-scroll-section">
+        <p>Le savoir est une arme redoutable. Sans technologie, vous resterez à l'âge de pierre.</p>
+        <ul>
+          <li><b>L'Arbre des Technologies</b> : Accessible en bas à droite. Il est composé de plusieurs branches (Militaire, Maritime, Économique...).</li>
+          <li><b>Coût Croissant</b> : Acheter une technologie coûte des étoiles (⭐). <b>Le prix des technologies augmente en fonction du nombre de villes que vous possédez !</b> Il est parfois plus intelligent de rechercher une technologie clé avant de fonder une nouvelle ville.</li>
+          <li><b>Ce qu'elles débloquent</b> : Les technologies vous donnent accès à de nouvelles Unités (Archers, Épéistes...), à de nouveaux Bâtiments (Ports, Ateliers), et à des <b>Compétences Passives</b> indispensables.</li>
+          <li><b>Compétences Clés</b> :
+            <ul style={{marginTop:"0.5rem", marginBottom:"0.5rem", marginLeft:"1rem"}}>
+              <li><b>Escalade</b> : Indispensable pour que vos unités puissent grimper et traverser les Montagnes.</li>
+              <li><b>Navigation</b> : Permet à vos unités terrestres d'embarquer sur l'Océan pour traverser les mers en devenant temporairement des navires.</li>
+              <li><b>Routes</b> : Permet de construire des routes. Se déplacer de route en route ne coûte qu'un demi-point de mouvement, doublant la vitesse de votre armée !</li>
+            </ul>
+          </li>
+        </ul>
+      </div>
     ),
   },
   {
-    id: "diplomatie",
-    label: "🤝 Diplomatie",
+    id: "culture",
+    label: "🎭 Culture & Doctrines",
     body: (
       <ul>
-        <li><b>Pactes de Paix</b> : Via l'icône Diplomatie (haut de l'écran), vous pouvez proposer un pacte de paix.</li>
-        <li><b>Alliances</b> : Deux joueurs alliés ne peuvent plus s'attaquer. Pratique pour s'unir contre un joueur plus fort.</li>
-        <li><b>Trahisons</b> : La paix n'est pas éternelle. Vous pouvez briser un traité à tout moment pour lancer une attaque surprise. L'Intelligence Artificielle n'hésitera pas à le faire si elle vous juge faible.</li>
+        <li><b>La Culture (🎭)</b> : En plus de l'Or, vous générez de la Culture chaque tour. Vous gagnez de la culture de base, mais pouvez en gagner bien plus en construisant des <b>Monuments</b>, en découvrant certaines Ruines ou en accomplissant des Quêtes.</li>
+        <li><b>Les Doctrines</b> : La culture accumulée peut être dépensée dans l'onglet "Diplomatie/Doctrines" pour adopter des Doctrines permanentes.</li>
+        <li><b>Exemples de Doctrines</b> : <i>Impérialisme</i> (qui réduit le coût de toutes les armées), <i>Commerce</i> (qui booste la rentabilité de vos routes), ou encore <i>Mysticisme</i> (qui permet à vos villes de se soigner).</li>
+        <li>Les doctrines adoptées par votre civilisation sont définitives et vous donneront un avantage sur le long terme par rapport aux civilisations purement militaires.</li>
       </ul>
     ),
   },
   {
     id: "quetes",
-    label: "🧙 Quêtes & Événements",
+    label: "🧙 Événements & Sages",
     body: (
-      <ul>
-        <li><b>Les Sages</b> : Au lieu de vous donner un simple bonus, les Sages (Stan et Nico) vous donneront une <b>Quête</b> à durée limitée (tuer X ennemis, récolter X éléments...). Réussissez avant la fin du compteur pour obtenir des Pactoles, Héros ou Technologies !</li>
-        <li><b>Événements Aléatoires</b> : À chaque tour, votre monde peut basculer. Vous avez 5% de chance de subir un événement.</li>
-        <li><b>Types d'événements</b> : Il y a les bons (Âge d'Or, Inspiration qui donnent de l'or instantané) et les mauvais (Famine qui réduit drastiquement les revenus du tour). Restez prudents dans vos réserves d'or.</li>
-      </ul>
+      <div className="help-scroll-section">
+        <ul>
+          <li><b>Événements Aléatoires</b> : Chaque tour, l'histoire de votre empire s'écrit. Il y a une faible chance (5%) qu'un événement aléatoire survienne en début de tour.</li>
+          <li><b>Bénédictions et Malédictions</b> : Les événements peuvent être positifs (Âge d'Or, Découverte technologique instantanée, Richesse soudaine) ou désastreux (Famine détruisant vos revenus, Tempêtes...). Gardez toujours une réserve de sécurité !</li>
+          <li><b>Les Sages (Nico & Stan)</b> : En explorant la carte, vous pourriez tomber sur la case de Stan ou Nico (des personnages légendaires).</li>
+          <li><b>Les Quêtes</b> : Si vous placez une unité à côté d'un Sage, il vous proposera un défi chronométré (ex: "Élimine 3 ennemis en 5 tours", ou "Récolte 4 ressources en 3 tours").</li>
+          <li><b>Récompenses Héroïques</b> : Si vous validez la Quête avant la fin du temps imparti, le Sage vous inondera de richesses, vous offrira une technologie gratuite, ou améliorera les statistiques de votre Héros de manière permanente ! Attention, chaque joueur ne peut consulter un Sage qu'une seule fois.</li>
+        </ul>
+      </div>
     ),
   },
   {
-    id: "tech",
-    label: "🔬 Tech",
+    id: "diplomatie",
+    label: "🤝 Diplomatie & Barbares",
     body: (
       <ul>
-        <li><b>L'Arbre de Technologies</b> : Il débloque de nouvelles actions et unités. Acheter des technologies coûte des étoiles. Plus vous avez de villes, plus les technologies coûtent cher (le savoir est plus long à propager).</li>
-        <li><b>Exemples vitaux</b> : <b>Escalade</b> (pour marcher sur les montagnes), <b>Navigation</b> (pour traverser les mers), ou <b>Construction</b> (pour bâtir ateliers et murailles).</li>
+        <li><b>Le Menu Diplomatie</b> : En bas à droite de l'écran, vous pouvez voir les autres joueurs connus et gérer vos relations.</li>
+        <li><b>Pactes de Paix</b> : Vous pouvez proposer la paix à un adversaire. S'il accepte, vous devenez <b>Alliés</b>. Les alliés ne peuvent plus s'attaquer, et voient à travers le brouillard de guerre le territoire de l'autre !</li>
+        <li><b>Trahison</b> : Vous pouvez rompre une alliance à tout moment en cliquant sur "Rompre la paix". Préparez vos troupes à l'avance pour une attaque surprise foudroyante. L'Intelligence Artificielle n'hésitera pas à vous trahir si elle vous trouve trop faible !</li>
+        <li><b>Les Barbares</b> : Ce sont des tribus sauvages contrôlées par le jeu. Ils n'ont pas de villes, mais apparaissent depuis des campements cachés pour attaquer tout le monde. Tuez-les pour sécuriser vos terres.</li>
       </ul>
     ),
   },
   {
     id: "victoire",
-    label: "🏆 Victoire",
+    label: "🏆 Conditions de Victoire",
     body: (
       <ul>
-        <li><b>Domination Totale</b> : Le premier joueur qui élimine toutes les autres civilisations (en capturant leur dernière ville) remporte la partie immédiatement.</li>
-        <li><b>Score</b> : Si le mode de jeu a une limite de tours (ex: 30 tours), la partie se termine au tour 30. Le joueur avec le plus de Score l'emporte.</li>
-        <li>Le score se calcule en cumulant le niveau de vos villes, vos technologies recherchées, le nombre et le niveau de vos unités vivantes.</li>
+        <li>Il existe deux façons de gagner la partie, selon les règles choisies par l'hôte du salon :</li>
+        <li><b>1. Domination Totale</b> : C'est la loi du plus fort. Pour gagner, vous devez éliminer toutes les autres civilisations en capturant <b>absolument toutes leurs villes</b>. Le dernier joueur en vie gagne.</li>
+        <li><b>2. Limite de Tours (Score)</b> : Si l'hôte a défini une limite (ex: 30 tours), la partie s'arrêtera brutalement à la fin du 30ème tour.</li>
+        <li><b>Le Score</b> : Dans une partie limitée aux tours, c'est le joueur avec le Score le plus élevé qui gagne. Votre Score dépend de la taille de votre empire, du niveau de vos villes, des technologies que vous avez découvertes, et de la taille et de l'expérience de votre armée.</li>
       </ul>
     ),
   },
