@@ -165,7 +165,7 @@ function isLegalAdoptDoctrine(state: GameState, action: AdoptDoctrineAction): bo
 
 function isLegalProposePeace(state: GameState, action: ProposePeaceAction): boolean {
   if (state.currentPlayer === action.to) return false;
-  if (!state.players[action.to]) return false;
+  if (!state.players.find(p => p.id === action.to)) return false;
   if (areAllies(state, state.currentPlayer, action.to)) return false;
   if (state.peaceProposals.some(p => p.from === state.currentPlayer && p.to === action.to)) return false;
   return true;

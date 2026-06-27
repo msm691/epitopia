@@ -50,6 +50,13 @@ export function App() {
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
+  // Auto-reconnect if we already have a name in local storage
+  useEffect(() => {
+    if (name.trim()) {
+      connectToServer();
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       socketRef.current?.disconnect();
@@ -101,6 +108,7 @@ export function App() {
     
     socket.on("lobbiesList", (list) => {
       setLobbies(list);
+      // Only show lobby browser if we aren't already in a game/lobby
       if (!lobby && !state) {
         setInLobbyBrowser(true);
       }
@@ -109,6 +117,11 @@ export function App() {
     socket.on("joinedLobby", () => {
       setInLobbyBrowser(false);
       setError(null);
+    });
+    
+    socket.on("lobbyUpdate", (l) => {
+      setLobby(l);
+      setInLobbyBrowser(false);
     });
 
     socket.on("connect_error", () => {

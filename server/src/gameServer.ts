@@ -275,6 +275,7 @@ export function createGameServer(port = 3001, opts: GameServerOptions = {}): Pro
         socket.emit("joinedLobby", foundLobby.id);
         socket.emit("assigned", foundPlayer.id);
         if (foundLobby.state) socket.emit("state", foundLobby.state);
+        socket.emit("lobbyUpdate", foundLobby.toInfo());
         broadcastLobby(foundLobby);
         driveTurn(foundLobby);
       } else {
@@ -475,6 +476,11 @@ export function createGameServer(port = 3001, opts: GameServerOptions = {}): Pro
         turnSeconds: s.turnSeconds == null ? null : Math.max(5, Math.floor(s.turnSeconds)),
         mapSize: s.mapSize == null ? null : Math.max(8, Math.min(28, Math.floor(s.mapSize))),
         mapType,
+        weatherEnabled: !!s.weatherEnabled,
+        bossesEnabled: !!s.bossesEnabled,
+        rpgModeEnabled: !!s.rpgModeEnabled,
+        wondersEnabled: !!s.wondersEnabled,
+        navalCombatEnabled: !!s.navalCombatEnabled,
       };
       broadcastLobby(lobby);
     });

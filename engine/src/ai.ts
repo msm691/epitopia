@@ -170,7 +170,7 @@ export function nextAIAction(state: GameState, pid: PlayerId): Action {
         const action: Action = { type: "ATTACK", attackerId: u.id, targetId: t.id };
         if (!isLegal(state, action)) continue;
         const melee = chebyshev(u, t) === 1;
-        const r = computeCombat(u, t, melee, getDefenseBonus(state, t));
+        const r = computeCombat(state, u, t, melee, getDefenseBonus(state, t));
         if (r.attackerDies && !r.defenderDies) continue; 
         const score = r.defenderDies ? 1000 + r.defenderDamage : r.defenderDamage - r.attackerDamage;
         if (score >= 0 && score > bestAtkScore) {

@@ -258,7 +258,7 @@ export function GameView({
   }, [isMyTurn, pending, techOpen, diplomacyOpen, helpOpen, send]);
 
   // Vote de fin : disponible en mode infini (pas de limite de tours).
-  const canVoteEnd = state.turnLimit === null && !victory.over;
+  const canVoteEnd = !victory.over;
   const hasVotedEnd =
     !!endVote && (endVote.approve.includes(myId) || endVote.decline.includes(myId));
 
