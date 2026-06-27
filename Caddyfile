@@ -1,0 +1,8 @@
+epitopia.fr {
+    route /socket.io/* {
+        reverse_proxy localhost:3001
+    }
+    file_server {
+        root client/dist
+    }
+}
