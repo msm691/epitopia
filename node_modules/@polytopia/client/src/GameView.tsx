@@ -997,6 +997,7 @@ export function GameView({
         <DiplomacyModal
           state={state}
           me={myId}
+          isMyTurn={isMyTurn}
           onSend={(action) => {
             send(action);
             if (action.type === "PROPOSE_PEACE") addToast("Proposition de paix envoyée.");
@@ -1012,6 +1013,7 @@ export function GameView({
         <DoctrinesModal
           state={state}
           me={myId}
+          isMyTurn={isMyTurn}
           onSend={(action) => {
             send(action);
             addToast("Doctrine adoptée !");
@@ -1393,7 +1395,7 @@ function TechTree({ state, me, cityCount, canResearch, onResearch, onClose }: Te
   );
 }
 
-function DiplomacyModal({ state, me, onSend, onClose }: { state: GameState; me: number; onSend: (a: Action) => void; onClose: () => void }) {
+function DiplomacyModal({ state, me, isMyTurn, onSend, onClose }: { state: GameState; me: number; isMyTurn: boolean; onSend: (a: Action) => void; onClose: () => void }) {
   const proposalsToMe = state.peaceProposals.filter(p => p.to === me);
 
   return (
@@ -1412,7 +1414,7 @@ function DiplomacyModal({ state, me, onSend, onClose }: { state: GameState; me: 
                 return (
                   <div key={p.from} style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "0.5rem" }}>
                     <span>{fromPlayer?.civName} propose la paix !</span>
-                    <button onClick={() => onSend({ type: "ACCEPT_PEACE", with: p.from })}>Accepter</button>
+                    <button disabled={!isMyTurn} onClick={() => onSend({ type: "ACCEPT_PEACE", with: p.from })}>Accepter</button>
                   </div>
                 );
               })}
@@ -1428,23 +1430,24 @@ function DiplomacyModal({ state, me, onSend, onClose }: { state: GameState; me: 
                 <li key={p.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
                   <span style={{ color: p.color }}>{p.civName}</span>
                   {isAllied ? (
-                    <button onClick={() => onSend({ type: "BREAK_PEACE", with: p.id })}>Rompre la paix</button>
+                    <button disabled={!isMyTurn} onClick={() => onSend({ type: "BREAK_PEACE", with: p.id })}>Rompre la paix</button>
                   ) : hasProposed ? (
                     <span>Proposition envoyée</span>
                   ) : (
-                    <button onClick={() => onSend({ type: "PROPOSE_PEACE", to: p.id })}>Proposer la paix</button>
+                    <button disabled={!isMyTurn} onClick={() => onSend({ type: "PROPOSE_PEACE", to: p.id })}>Proposer la paix</button>
                   )}
                 </li>
               );
             })}
           </ul>
+          {!isMyTurn && <p className="hint" style={{marginTop: "1rem"}}>Tu pourras agir à ton tour.</p>}
         </div>
       </div>
     </div>
   );
 }
 
-function DoctrinesModal({ state, me, onSend, onClose }: { state: GameState; me: number; onSend: (a: Action) => void; onClose: () => void }) {
+function DoctrinesModal({ state, me, isMyTurn, onSend, onClose }: { state: GameState; me: number; isMyTurn: boolean; onSend: (a: Action) => void; onClose: () => void }) {
   const player = state.players[me];
   const culture = player?.culture ?? 0;
   const adopted = player?.culturalDoctrines ?? [];
@@ -1477,7 +1480,7 @@ function DoctrinesModal({ state, me, onSend, onClose }: { state: GameState; me: 
                     ) : (
                       <button 
                         className="primary" 
-                        disabled={!canAfford}
+                        disabled={!canAfford || !isMyTurn}
                         onClick={() => onSend({ type: "ADOPT_DOCTRINE", doctrineId: doc.id })}
                       >
                         {doc.cost} 🎭
@@ -1488,6 +1491,7 @@ function DoctrinesModal({ state, me, onSend, onClose }: { state: GameState; me: 
               );
             })}
           </div>
+          {!isMyTurn && <p className="hint" style={{marginTop: "1rem"}}>Tu pourras adopter une doctrine à ton tour.</p>}
         </div>
       </div>
     </div>
