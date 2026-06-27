@@ -125,12 +125,17 @@ function HighlightPlanes({
   lift?: number;
   size?: number;
   pulse?: number;
+  perfMode?: boolean;
 }) {
   const fill = useMemo(
     () => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: base, depthWrite: false, toneMapped: false }),
     [color, base],
   );
   useFrame(({ clock }) => {
+    if (perfMode) {
+      fill.opacity = base;
+      return;
+    }
     const p = base + Math.sin(clock.elapsedTime * 4 + phase) * pulse;
     fill.opacity = Math.max(0, p);
   });
@@ -173,6 +178,7 @@ function RegionOutline({
   cells: readonly Coord[] | undefined;
   color: string;
   lift?: number;
+  perfMode?: boolean;
 }) {
   const mat = useMemo(
     () =>
@@ -187,6 +193,10 @@ function RegionOutline({
     [color],
   );
   useFrame(({ clock }) => {
+    if (perfMode) {
+      mat.opacity = 0.8;
+      return;
+    }
     mat.opacity = 0.72 + Math.sin(clock.elapsedTime * 3.5) * 0.22;
   });
   const list = cells ?? [];
@@ -230,8 +240,8 @@ function squareCells(state: GameState, zone: { x: number; y: number; radius: num
 }
 
 /** Contour d'un carré de portée PLEIN (juste sa limite extérieure, net et clair). */
-function SquareZone({ state, zone, color }: { state: GameState; zone: { x: number; y: number; radius: number } | undefined; color: string }) {
-  return <RegionOutline state={state} cells={squareCells(state, zone)} color={color} />;
+function SquareZone({ state, zone, color, perfMode }: { state: GameState; zone: { x: number; y: number; radius: number } | undefined; color: string; perfMode?: boolean }) {
+  return <RegionOutline state={state} cells={squareCells(state, zone)} color={color} perfMode={perfMode} />;
 }
 
 /**
@@ -427,19 +437,19 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
       <WaterPickLayer state={state} onPick={handlePick} />
       <Terrain state={state} onPick={handlePick} />
       <Resources state={state} />
-      <Villages state={state} />
-      <Sages state={state} />
-      <Cities state={state} />
+      <Villages state={state} perfMode={perfMode} />
+      <Sages state={state} perfMode={perfMode} />
+      <Cities state={state} perfMode={perfMode} />
       <AnimatedUnits state={state} anim={anim} />
       <Effects state={state} events={anim.events} removeEvent={anim.removeEvent} />
 
       {/* Zone d'attaque : CONTOUR orange net du carré de portée (limite extérieure) */}
-      <SquareZone state={state} zone={overlay.attackZone} color="#ff7a1a" />
-      <HighlightPlanes state={state} cells={overlay.moves} color="#ffe14d" base={0.55} />
-      <HighlightPlanes state={state} cells={overlay.attacks} color="#ff4d4d" base={0.58} phase={1} />
-      <HighlightPlanes state={state} cells={overlay.harvests} color="#3df0a0" base={0.55} phase={2} />
-      <PulseRing state={state} cell={overlay.selected} color="#8fe3ff" />
-      <PulseRing state={state} cell={overlay.pending} color="#ffce5a" />
+      <SquareZone state={state} zone={overlay.attackZone} color="#ff7a1a" perfMode={perfMode} />
+      <HighlightPlanes state={state} cells={overlay.moves} color="#ffe14d" base={0.55} perfMode={perfMode} />
+      <HighlightPlanes state={state} cells={overlay.attacks} color="#ff4d4d" base={0.58} phase={1} perfMode={perfMode} />
+      <HighlightPlanes state={state} cells={overlay.harvests} color="#3df0a0" base={0.55} phase={2} perfMode={perfMode} />
+      <PulseRing state={state} cell={overlay.selected} color="#8fe3ff" perfMode={perfMode} />
+      <PulseRing state={state} cell={overlay.pending} color="#ffce5a" perfMode={perfMode} />
 
       <CameraRig ref={ref} state={state} focus={focus} />
 

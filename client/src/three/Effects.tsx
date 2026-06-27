@@ -501,10 +501,14 @@ function ConfettiFx({ state, ev, onDone }: { state: GameState; ev: Extract<Scene
 // Anneau pulsé (sélection / confirmation)
 // ---------------------------------------------------------------------------
 
-export function PulseRing({ state, cell, color }: { state: GameState; cell: { x: number; y: number } | undefined; color: string }) {
+export function PulseRing({ state, cell, color, perfMode }: { state: GameState; cell: { x: number; y: number } | undefined; color: string; perfMode?: boolean }) {
   const ref = useRef<THREE.Mesh>(null);
   useFrame(({ clock }) => {
     if (ref.current) {
+      if (perfMode) {
+        ref.current.scale.set(1, 1, 1);
+        return;
+      }
       const s = 1 + Math.sin(clock.elapsedTime * 4) * 0.08;
       ref.current.scale.set(s, s, 1);
     }

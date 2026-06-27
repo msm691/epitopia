@@ -40,9 +40,10 @@ function WallHpBar({ hp }: { hp: number }) {
 }
 
 /** Engrenage (tore) qui tourne au-dessus d'une ville : « unité en production ». */
-function ProductionMarker() {
+function ProductionMarker({ perfMode }: { perfMode?: boolean }) {
   const ref = useRef<THREE.Mesh>(null);
   useFrame(({ clock }) => {
+    if (perfMode) return;
     const m = ref.current;
     if (m) {
       m.rotation.z = clock.elapsedTime * 2;
@@ -58,9 +59,10 @@ function ProductionMarker() {
 }
 
 /** Octaèdre doré flottant + tournant : « récompense à choisir ». */
-function RewardMarker() {
+function RewardMarker({ perfMode }: { perfMode?: boolean }) {
   const ref = useRef<THREE.Mesh>(null);
   useFrame(({ clock }) => {
+    if (perfMode) return;
     const m = ref.current;
     if (m) {
       m.rotation.y = clock.elapsedTime * 1.6;
@@ -187,7 +189,7 @@ function ProceduralCityHouses({ city, color }: { city: City; color: THREE.Color 
   );
 }
 
-function CityBuildings({ city, color }: { city: City; color: THREE.Color }) {
+function CityBuildings({ city, color, perfMode }: { city: City; color: THREE.Color; perfMode?: boolean }) {
   return (
     <group>
       {/* Bâtiments : modèle 3D si enregistré, sinon procédural. Le drapeau/murs/
@@ -218,15 +220,15 @@ function CityBuildings({ city, color }: { city: City; color: THREE.Color }) {
       {(city.wallHp ?? 0) > 0 && <WallHpBar hp={city.wallHp ?? 0} />}
 
       {/* Marqueur de récompense à choisir */}
-      {(city.rewardsToPick ?? 0) > 0 && <RewardMarker />}
+      {(city.rewardsToPick ?? 0) > 0 && <RewardMarker perfMode={perfMode} />}
 
       {/* Marqueur de production en cours (grosse unité) */}
-      {city.production && <ProductionMarker />}
+      {city.production && <ProductionMarker perfMode={perfMode} />}
     </group>
   );
 }
 
-export function Cities({ state }: { state: GameState }) {
+export function Cities({ state, perfMode }: { state: GameState; perfMode?: boolean }) {
   return (
     <group>
       {state.cities.map((c) => {
@@ -235,7 +237,7 @@ export function Cities({ state }: { state: GameState }) {
         const color = new THREE.Color(owner?.color ?? "#dddddd");
         return (
           <group key={c.id} position={[t.x, t.y, t.z]}>
-            <CityBuildings city={c} color={color} />
+            <CityBuildings city={c} color={color} perfMode={perfMode} />
             {owner && <NameTag text={owner.civName} color={owner.color} y={1.35} />}
           </group>
         );
@@ -267,9 +269,10 @@ function Hut({ scale = 1, rot = 0 }: { scale?: number; rot?: number }) {
 }
 
 /** Fanion neutre flottant : signale « village à capturer ». */
-function VillageBanner() {
+function VillageBanner({ perfMode }: { perfMode?: boolean }) {
   const ref = useRef<THREE.Group>(null);
   useFrame(({ clock }) => {
+    if (perfMode) return;
     if (ref.current) ref.current.position.y = 0.78 + Math.sin(clock.elapsedTime * 2.2) * 0.05;
   });
   return (
@@ -287,9 +290,10 @@ function VillageBanner() {
 }
 
 /** Sage mystérieux (PNJ) : silhouette encapuchonnée + orbe magique flottant. */
-function ProceduralSage() {
+function ProceduralSage({ perfMode }: { perfMode?: boolean }) {
   const orb = useRef<THREE.Mesh>(null);
   useFrame(({ clock }) => {
+    if (perfMode) return;
     const m = orb.current;
     if (m) {
       m.position.y = 0.62 + Math.sin(clock.elapsedTime * 2) * 0.06;
@@ -327,7 +331,7 @@ function ProceduralSage() {
   );
 }
 
-export function Sages({ state }: { state: GameState }) {
+export function Sages({ state, perfMode }: { state: GameState; perfMode?: boolean }) {
   const sages = state.tiles.filter((t) => t.sage);
   return (
     <group>
@@ -335,7 +339,7 @@ export function Sages({ state }: { state: GameState }) {
         const t = tileTop(state, tile.x, tile.y);
         return (
           <group key={`s${tile.x},${tile.y}`} position={[t.x, t.y, t.z]}>
-            <ModelOr cfg={tile.sage ? SAGE_MODELS[tile.sage] : undefined} fallback={<ProceduralSage />} />
+            <ModelOr cfg={tile.sage ? SAGE_MODELS[tile.sage] : undefined} fallback={<ProceduralSage perfMode={perfMode} />} />
           </group>
         );
       })}
@@ -400,7 +404,7 @@ function ProceduralVillage() {
   );
 }
 
-export function Villages({ state }: { state: GameState }) {
+export function Villages({ state, perfMode }: { state: GameState; perfMode?: boolean }) {
   const huts = state.tiles.filter((t) => t.village && t.cityId === undefined);
   return (
     <group>
@@ -411,7 +415,7 @@ export function Villages({ state }: { state: GameState }) {
             {/* Village : modèle 3D si enregistré, sinon huttes procédurales.
                 Le fanion « à capturer » reste affiché par-dessus. */}
             <ModelOr cfg={VILLAGE_MODEL} fallback={<ProceduralVillage />} />
-            <VillageBanner />
+            <VillageBanner perfMode={perfMode} />
           </group>
         );
       })}
