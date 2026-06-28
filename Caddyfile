@@ -1,4 +1,4 @@
-epitopia.fr {
+:80 {
     route /socket.io/* {
         reverse_proxy localhost:3001
     }
