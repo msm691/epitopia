@@ -9,19 +9,6 @@
     <title>Epitopia</title>
   </head>
   <body>
-    <div id="crash-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:red; color:white; z-index:999999; padding:20px; font-family:monospace; white-space:pre-wrap;"></div>
-    <script>
-      window.onerror = function(msg, src, lineno, colno, error) {
-        var overlay = document.getElementById('crash-overlay');
-        overlay.style.display = 'block';
-        overlay.innerText = "CRASH: " + msg + "\n" + (error ? error.stack : "");
-      };
-      window.addEventListener('unhandledrejection', function(event) {
-        var overlay = document.getElementById('crash-overlay');
-        overlay.style.display = 'block';
-        overlay.innerText = "UNHANDLED PROMISE: " + event.reason;
-      });
-    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx?v=3"></script>
   </body>
