@@ -9,4 +9,7 @@ export default defineConfig({
     port: 80,
     allowedHosts: ["epitopia.fr", "www.epitopia.fr"],
   },
+  resolve: {
+    dedupe: ["react", "react-dom", "three", "@react-three/fiber", "@react-three/drei"]
+  }
 });
