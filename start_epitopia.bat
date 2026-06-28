@@ -13,7 +13,11 @@ echo === 2. Installation des dependances ===
 call npm install
 
 echo.
-echo === 3. Lancement du Serveur et du Client ===
-npx concurrently -n "SERVEUR,CLIENT" -c "bgBlack.white,bgBlue.white" "npm run dev:server" "npm run dev"
+echo === 3. Compilation du jeu (Production) ===
+call npm run build --workspace client
+
+echo.
+echo === 4. Lancement du Serveur et de Caddy ===
+npx concurrently -n "NODE,CADDY" -c "bgBlack.white,bgBlue.white" "npm run dev:server" "caddy run"
 
 pause

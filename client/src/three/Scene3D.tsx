@@ -259,23 +259,44 @@ function WaterPickLayer({
   state: GameState;
   onPick: (e: ThreeEvent<MouseEvent>, coord: Coord) => void;
 }) {
+  const geo = useMemo(() => new THREE.BoxGeometry(0.92, 0.5, 0.92), []);
+  const mat = useMemo(() => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }), []);
+  
+  const tiles = useMemo(() => {
+    return state.tiles.filter(t => isWater(t.terrain)).map(t => {
+      const { x, z } = tileXZ(t.x, t.y, state.width, state.height);
+      return { x: t.x, y: t.y, wx: x, cy: 0.18, z };
+    });
+  }, [state]);
+
+  const ref = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    const dummy = new THREE.Object3D();
+    tiles.forEach((t, i) => {
+      dummy.position.set(t.wx, t.cy, t.z);
+      dummy.updateMatrix();
+      ref.current!.setMatrixAt(i, dummy.matrix);
+    });
+    ref.current.instanceMatrix.needsUpdate = true;
+  }, [tiles]);
+
+  if (tiles.length === 0) return null;
+
   return (
-    <group>
-      {state.tiles.map((tile) => {
-        if (!isWater(tile.terrain)) return null;
-        const { x, z } = tileXZ(tile.x, tile.y, state.width, state.height);
-        return (
-          <mesh
-            key={`wp${tile.x},${tile.y}`}
-            position={[x, 0.18, z]}
-            onClick={(e) => onPick(e, { x: tile.x, y: tile.y })}
-          >
-            <boxGeometry args={[0.92, 0.5, 0.92]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-          </mesh>
-        );
-      })}
-    </group>
+    <instancedMesh
+      ref={ref}
+      args={[geo, mat, tiles.length]}
+      onClick={(e) => {
+        if (e.instanceId !== undefined) {
+          const t = tiles[e.instanceId];
+          if (t) {
+            e.stopPropagation();
+            onPick(e, { x: t.x, y: t.y });
+          }
+        }
+      }}
+    />
   );
 }
 

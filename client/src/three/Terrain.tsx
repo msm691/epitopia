@@ -152,6 +152,79 @@ export interface TerrainProps {
   onPick: (e: ThreeEvent<MouseEvent>, coord: Coord) => void;
 }
 
+interface TileInstance {
+  x: number;
+  y: number;
+  wx: number;
+  cy: number;
+  z: number;
+}
+
+interface TileGroup {
+  geo: THREE.BoxGeometry;
+  tiles: TileInstance[];
+}
+
+function InstancedTilesGroup({
+  group,
+  mat,
+  onPick,
+}: {
+  group: TileGroup;
+  mat: THREE.Material;
+  onPick: (e: ThreeEvent<MouseEvent>, coord: Coord) => void;
+}) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    const dummy = new THREE.Object3D();
+    group.tiles.forEach((t, i) => {
+      dummy.position.set(t.wx, t.cy, t.z);
+      dummy.updateMatrix();
+      ref.current!.setMatrixAt(i, dummy.matrix);
+    });
+    ref.current.instanceMatrix.needsUpdate = true;
+  }, [group]);
+
+  return (
+    <instancedMesh
+      ref={ref}
+      args={[group.geo, mat, group.tiles.length]}
+      castShadow
+      receiveShadow
+      onClick={(e) => {
+        if (e.instanceId !== undefined) {
+          const t = group.tiles[e.instanceId];
+          if (t) {
+            e.stopPropagation();
+            onPick(e, { x: t.x, y: t.y });
+          }
+        }
+      }}
+    />
+  );
+}
+
+function InstancedRoads({ tiles }: { tiles: { wx: number; y: number; z: number }[] }) {
+  const geo = useMemo(() => new THREE.PlaneGeometry(0.5, 0.5), []);
+  const mat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#8b5a2b" }), []);
+  const ref = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    const dummy = new THREE.Object3D();
+    tiles.forEach((t, i) => {
+      dummy.position.set(t.wx, t.y, t.z);
+      dummy.rotation.set(-Math.PI / 2, 0, 0);
+      dummy.updateMatrix();
+      ref.current!.setMatrixAt(i, dummy.matrix);
+    });
+    ref.current.instanceMatrix.needsUpdate = true;
+  }, [tiles]);
+
+  if (tiles.length === 0) return null;
+  return <instancedMesh ref={ref} args={[geo, mat, tiles.length]} />;
+}
+
 const BIOMES: Record<string, { champ: string; foret: string; montagne: string }> = {
   prairie: { champ: "#6cc24a", foret: "#519a3e", montagne: "#9aa0ac" },
   neige: { champ: "#d1e1eb", foret: "#b3cddf", montagne: "#ffffff" },
@@ -225,34 +298,40 @@ export function Terrain({ state, onPick }: TerrainProps) {
     return { trees, peaks };
   }, [state]);
 
+  // Group tiles by geometry and collect roads for InstancedMesh rendering
+  const { tileGroups, roads } = useMemo(() => {
+    const groups = new Map<string, TileGroup>();
+    const roadsList: { wx: number; y: number; z: number }[] = [];
+
+    for (const tile of state.tiles) {
+      if (isWater(tile.terrain)) continue;
+
+      const { x: wx, z } = tileXZ(tile.x, tile.y, state.width, state.height);
+      const cy = columnCenterY(tile.terrain);
+      const biome = getBiome(state, tile.x, tile.y);
+      const isCoastal = isCoastalLand(state, tile.x, tile.y);
+      const geo = getGeo(tile.terrain, isCoastal, biome, tile.naturalWonder);
+
+      const key = `${tile.terrain}-${isCoastal ? "beach" : "land"}-${biome}-${tile.naturalWonder ?? "none"}`;
+      if (!groups.has(key)) {
+        groups.set(key, { geo, tiles: [] });
+      }
+      groups.get(key)!.tiles.push({ x: tile.x, y: tile.y, wx, cy, z });
+
+      if (tile.hasRoad) {
+        roadsList.push({ wx, y: columnHeight(tile.terrain) / 2 + 0.01, z });
+      }
+    }
+
+    return { tileGroups: Array.from(groups.values()), roads: roadsList };
+  }, [state]);
+
   return (
     <group>
-      {state.tiles.map((tile) => {
-        if (isWater(tile.terrain)) return null; // l'eau est gérée par le plan animé
-        const { x: wx, z } = tileXZ(tile.x, tile.y, state.width, state.height);
-        const cy = columnCenterY(tile.terrain);
-        const biome = getBiome(state, tile.x, tile.y);
-        const isCoastal = isCoastalLand(state, tile.x, tile.y);
-        const geo = getGeo(tile.terrain, isCoastal, biome, tile.naturalWonder);
-
-        return (
-          <group key={`${tile.x},${tile.y}`} position={[wx, cy, z]}>
-            <mesh
-              geometry={geo}
-              material={mat}
-              castShadow
-              receiveShadow
-              onClick={(e) => onPick(e, { x: tile.x, y: tile.y })}
-            />
-            {tile.hasRoad && (
-              <mesh position={[0, columnHeight(tile.terrain) / 2 + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                <planeGeometry args={[0.5, 0.5]} />
-                <meshStandardMaterial color="#8b5a2b" />
-              </mesh>
-            )}
-          </group>
-        );
-      })}
+      {tileGroups.map((group, i) => (
+        <InstancedTilesGroup key={i} group={group} mat={mat} onPick={onPick} />
+      ))}
+      <InstancedRoads tiles={roads} />
       <InstancedTrees items={trees} />
       <InstancedPeaks items={peaks} />
     </group>
