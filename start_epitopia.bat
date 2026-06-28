@@ -6,6 +6,7 @@ color 4F
 cd /d "C:\Users\Administrateur\Desktop\epitopia"
 
 echo === 1. Mise a jour du code ===
+git reset --hard
 git pull origin main
 
 echo.
