@@ -73,18 +73,18 @@ export function useSceneAnimations(state: GameState): SceneAnim {
 
     // Déplacements -> glissement.
     for (const u of state.units) {
-      const pu = prev.units.find((x) => x.id === u.id);
+      const pu = prev.units.find((x: any) => x.id === u.id);
       if (pu && (pu.x !== u.x || pu.y !== u.y)) {
         glides.current.set(u.id, { fromX: pu.x, fromY: pu.y, t0: now });
       }
     }
     // Apparitions (recrutement) -> pop.
     for (const u of state.units) {
-      if (!prev.units.some((x) => x.id === u.id)) spawns.current.set(u.id, { t0: now });
+      if (!prev.units.some((x: any) => x.id === u.id)) spawns.current.set(u.id, { t0: now });
     }
     // Pertes de PV / morts -> impact + dégâts / fantôme.
     for (const pu of prev.units) {
-      const nu = state.units.find((x) => x.id === pu.id);
+      const nu = state.units.find((x: any) => x.id === pu.id);
       const owner = prev.players[pu.ownerId];
       if (!nu) {
         fresh.push({ id: nextId(), kind: "impact", x: pu.x, y: pu.y });
@@ -105,7 +105,7 @@ export function useSceneAnimations(state: GameState): SceneAnim {
     }
     // Attaquant -> recul vers la cible touchée la plus proche.
     for (const u of state.units) {
-      const pu = prev.units.find((x) => x.id === u.id);
+      const pu = prev.units.find((x: any) => x.id === u.id);
       const attacked = pu && !pu.hasAttacked && u.hasAttacked && pu.x === u.x && pu.y === u.y;
       if (attacked && hits.length > 0) {
         let best = hits[0]!;
@@ -127,7 +127,7 @@ export function useSceneAnimations(state: GameState): SceneAnim {
     }
     // Captures de ville -> éclat coloré.
     for (const nc of state.cities) {
-      const pc = prev.cities.find((c) => c.id === nc.id);
+      const pc = prev.cities.find((c: any) => c.id === nc.id);
       if (pc && pc.ownerId !== nc.ownerId) {
         const owner = state.players[nc.ownerId];
         fresh.push({ id: nextId(), kind: "capture", x: nc.x, y: nc.y, color: owner?.color ?? "#ffffff" });
@@ -136,9 +136,9 @@ export function useSceneAnimations(state: GameState): SceneAnim {
     }
     // Gains d'étoiles -> texte doré sur la capitale.
     for (const np of state.players) {
-      const pp = prev.players.find((x) => x.id === np.id);
+      const pp = prev.players.find((x: any) => x.id === np.id);
       if (pp && np.stars > pp.stars) {
-        const cap = state.cities.find((c) => c.ownerId === np.id);
+        const cap = state.cities.find((c: any) => c.ownerId === np.id);
         if (cap) {
           fresh.push({ id: nextId(), kind: "text", x: cap.x, y: cap.y, text: `+${np.stars - pp.stars}★`, color: "#ffd86b" });
         }
@@ -231,7 +231,7 @@ export function AnimatedUnits({ state, anim }: { state: GameState; anim: SceneAn
 
   return (
     <group>
-      {state.units.map((u) => {
+      {state.units.map((u: any) => {
         const to = tileTop(state, u.x, u.y);
         const owner = state.players[u.ownerId];
         const base = new THREE.Color(owner?.color ?? "#cccccc");

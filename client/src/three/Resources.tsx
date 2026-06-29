@@ -4,7 +4,6 @@
  * (la case dessous reste sélectionnable pour la récolte). Aucune règle de jeu.
  */
 
-import * as THREE from "three";
 import type { GameState, Resource } from "@polytopia/shared";
 import { tileTop } from "./projection.js";
 
@@ -182,7 +181,7 @@ function ResourceMesh({ type }: { type: Resource }) {
 export function Resources({ state }: { state: GameState }) {
   return (
     <group>
-      {state.tiles.map((tile) => {
+      {state.tiles.map((tile: any) => {
         if (!tile.resource) return null;
         const t = tileTop(state, tile.x, tile.y);
         // Case occupée (unité/ville/village) : on décale la ressource dans un coin

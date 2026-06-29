@@ -220,10 +220,10 @@ function CityBuildings({ city, color, perfMode }: { city: City; color: THREE.Col
       {(city.wallHp ?? 0) > 0 && <WallHpBar hp={city.wallHp ?? 0} />}
 
       {/* Marqueur de récompense à choisir */}
-      {(city.rewardsToPick ?? 0) > 0 && <RewardMarker perfMode={perfMode} />}
+      {(city.rewardsToPick ?? 0) > 0 && <RewardMarker perfMode={!!perfMode} />}
 
       {/* Marqueur de production en cours (grosse unité) */}
-      {city.production && <ProductionMarker perfMode={perfMode} />}
+      {city.production && <ProductionMarker perfMode={!!perfMode} />}
     </group>
   );
 }
@@ -231,13 +231,13 @@ function CityBuildings({ city, color, perfMode }: { city: City; color: THREE.Col
 export function Cities({ state, perfMode }: { state: GameState; perfMode?: boolean }) {
   return (
     <group>
-      {state.cities.map((c) => {
+      {state.cities.map((c: any) => {
         const t = tileTop(state, c.x, c.y);
         const owner = state.players[c.ownerId];
         const color = new THREE.Color(owner?.color ?? "#dddddd");
         return (
           <group key={c.id} position={[t.x, t.y, t.z]}>
-            <CityBuildings city={c} color={color} perfMode={perfMode} />
+            <CityBuildings city={c} color={color} perfMode={!!perfMode} />
             {owner && <NameTag text={owner.civName} color={owner.color} y={1.35} />}
           </group>
         );
@@ -332,14 +332,14 @@ function ProceduralSage({ perfMode }: { perfMode?: boolean }) {
 }
 
 export function Sages({ state, perfMode }: { state: GameState; perfMode?: boolean }) {
-  const sages = state.tiles.filter((t) => t.sage);
+  const sages = state.tiles.filter((t: any) => t.sage);
   return (
     <group>
-      {sages.map((tile) => {
+      {sages.map((tile: any) => {
         const t = tileTop(state, tile.x, tile.y);
         return (
           <group key={`s${tile.x},${tile.y}`} position={[t.x, t.y, t.z]}>
-            <ModelOr cfg={tile.sage ? SAGE_MODELS[tile.sage] : undefined} fallback={<ProceduralSage perfMode={perfMode} />} />
+            <ModelOr cfg={tile.sage ? SAGE_MODELS[tile.sage] : undefined} fallback={<ProceduralSage perfMode={!!perfMode} />} />
           </group>
         );
       })}
@@ -405,17 +405,17 @@ function ProceduralVillage() {
 }
 
 export function Villages({ state, perfMode }: { state: GameState; perfMode?: boolean }) {
-  const huts = state.tiles.filter((t) => t.village && t.cityId === undefined);
+  const huts = state.tiles.filter((t: any) => t.village && t.cityId === undefined);
   return (
     <group>
-      {huts.map((tile) => {
+      {huts.map((tile: any) => {
         const t = tileTop(state, tile.x, tile.y);
         return (
           <group key={`v${tile.x},${tile.y}`} position={[t.x, t.y, t.z]}>
             {/* Village : modèle 3D si enregistré, sinon huttes procédurales.
                 Le fanion « à capturer » reste affiché par-dessus. */}
             <ModelOr cfg={VILLAGE_MODEL} fallback={<ProceduralVillage />} />
-            <VillageBanner perfMode={perfMode} />
+            <VillageBanner perfMode={!!perfMode} />
           </group>
         );
       })}

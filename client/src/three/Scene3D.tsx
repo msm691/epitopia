@@ -7,7 +7,7 @@
  * eau animée, relief, ciel dégradé, éclairage cartoon).
  */
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useLayoutEffect, useImperativeHandle, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Environment, Lightformer, MapControls } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
@@ -243,7 +243,7 @@ function squareCells(state: GameState, zone: { x: number; y: number; radius: num
 
 /** Contour d'un carré de portée PLEIN (juste sa limite extérieure, net et clair). */
 function SquareZone({ state, zone, color, perfMode }: { state: GameState; zone: { x: number; y: number; radius: number } | undefined; color: string; perfMode?: boolean }) {
-  return <RegionOutline state={state} cells={squareCells(state, zone)} color={color} perfMode={perfMode} />;
+  return <RegionOutline state={state} cells={squareCells(state, zone)} color={color} perfMode={!!perfMode} />;
 }
 
 /**
@@ -263,7 +263,7 @@ function WaterPickLayer({
   const mat = useMemo(() => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }), []);
   
   const tiles = useMemo(() => {
-    return state.tiles.filter(t => isWater(t.terrain)).map(t => {
+    return state.tiles.filter((t: GameState["tiles"][0]) => isWater(t.terrain)).map((t: GameState["tiles"][0]) => {
       const { x, z } = tileXZ(t.x, t.y, state.width, state.height);
       return { x: t.x, y: t.y, wx: x, cy: 0.18, z };
     });
@@ -273,7 +273,7 @@ function WaterPickLayer({
   useLayoutEffect(() => {
     if (!ref.current) return;
     const dummy = new THREE.Object3D();
-    tiles.forEach((t, i) => {
+    tiles.forEach((t: any, i: number) => {
       dummy.position.set(t.wx, t.cy, t.z);
       dummy.updateMatrix();
       ref.current!.setMatrixAt(i, dummy.matrix);
@@ -456,23 +456,23 @@ export const Scene3D = forwardRef<Scene3DHandle, Scene3DProps>(function Scene3D(
         shadow-camera-far={80}
       />
 
-      <Water size={span} y={WATER_SURFACE_Y} onPick={handleWaterPick} perfMode={perfMode} />
+      <Water size={span} y={WATER_SURFACE_Y} onPick={handleWaterPick} perfMode={!!perfMode} />
       <WaterPickLayer state={state} onPick={handlePick} />
       <Terrain state={state} onPick={handlePick} />
       <Resources state={state} />
-      <Villages state={state} perfMode={perfMode} />
-      <Sages state={state} perfMode={perfMode} />
-      <Cities state={state} perfMode={perfMode} />
+      <Villages state={state} perfMode={!!perfMode} />
+      <Sages state={state} perfMode={!!perfMode} />
+      <Cities state={state} perfMode={!!perfMode} />
       <AnimatedUnits state={state} anim={anim} />
       <Effects state={state} events={anim.events} removeEvent={anim.removeEvent} />
 
       {/* Zone d'attaque : CONTOUR orange net du carré de portée (limite extérieure) */}
-      <SquareZone state={state} zone={overlay.attackZone} color="#ff7a1a" perfMode={perfMode} />
-      <HighlightPlanes state={state} cells={overlay.moves} color="#ffe14d" base={0.55} perfMode={perfMode} />
-      <HighlightPlanes state={state} cells={overlay.attacks} color="#ff4d4d" base={0.58} phase={1} perfMode={perfMode} />
-      <HighlightPlanes state={state} cells={overlay.harvests} color="#3df0a0" base={0.55} phase={2} perfMode={perfMode} />
-      <PulseRing state={state} cell={overlay.selected} color="#8fe3ff" perfMode={perfMode} />
-      <PulseRing state={state} cell={overlay.pending} color="#ffce5a" perfMode={perfMode} />
+      <SquareZone state={state} zone={overlay.attackZone} color="#ff7a1a" perfMode={!!perfMode} />
+      <HighlightPlanes state={state} cells={overlay.moves} color="#ffe14d" base={0.55} perfMode={!!perfMode} />
+      <HighlightPlanes state={state} cells={overlay.attacks} color="#ff4d4d" base={0.58} phase={1} perfMode={!!perfMode} />
+      <HighlightPlanes state={state} cells={overlay.harvests} color="#3df0a0" base={0.55} phase={2} perfMode={!!perfMode} />
+      <PulseRing state={state} cell={overlay.selected} color="#8fe3ff" perfMode={!!perfMode} />
+      <PulseRing state={state} cell={overlay.pending} color="#ffce5a" perfMode={!!perfMode} />
 
       <CameraRig ref={ref} state={state} focus={focus} />
 

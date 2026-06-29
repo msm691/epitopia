@@ -397,8 +397,6 @@ export function HpBar({ unit }: { unit: Unit }) {
         anchorX="center"
         anchorY="middle"
         renderOrder={903}
-        depthTest={false}
-        depthWrite={false}
       >
         {`${unit.hp} / ${maxHp(unit)}`}
       </Text>

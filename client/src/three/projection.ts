@@ -99,15 +99,15 @@ export function tileXZ(x: number, y: number, width: number, height: number): { x
 /** Position monde de la SURFACE d'une case (pour poser unités/villes/overlays). */
 export function tileTop(state: GameState, x: number, y: number): Vec3 {
   const { x: wx, z } = tileXZ(x, y, state.width, state.height);
-  return { x: wx, y: TERRAIN_TOP[terrainAt(state, x, y)], z };
+  return { x: wx, y: TERRAIN_TOP[terrainAt(state, x, y)] ?? 0, z };
 }
 
 /** Hauteur (épaisseur) de la colonne d'une tuile. */
 export function columnHeight(terrain: Terrain): number {
-  return TERRAIN_TOP[terrain] - BASE_Y;
+  return (TERRAIN_TOP[terrain] ?? 0) - BASE_Y;
 }
 
 /** Y du centre de la colonne (pour positionner une boîte). */
 export function columnCenterY(terrain: Terrain): number {
-  return (TERRAIN_TOP[terrain] + BASE_Y) / 2;
+  return ((TERRAIN_TOP[terrain] ?? 0) + BASE_Y) / 2;
 }

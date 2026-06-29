@@ -269,9 +269,9 @@ export function MenuBackground({ perfMode }: { perfMode?: boolean }) {
             <Lightformer intensity={0.5} color="#9fb6ec" position={[10, 8, 6]} scale={[12, 12, 1]} />
           </Environment>
         )}
-        <Island perfMode={perfMode} />
-        <Sea perfMode={perfMode} />
-        <Clouds perfMode={perfMode} />
+        <Island perfMode={!!perfMode} />
+        <Sea perfMode={!!perfMode} />
+        <Clouds perfMode={!!perfMode} />
         {!perfMode && (
           <EffectComposer>
             <Bloom intensity={0.9} luminanceThreshold={0.6} luminanceSmoothing={0.3} mipmapBlur />

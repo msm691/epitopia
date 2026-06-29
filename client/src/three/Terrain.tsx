@@ -18,7 +18,6 @@ import {
   isCoastalLand,
   isWater,
   SIDE_COLOR,
-  TERRAIN_COLOR,
   TERRAIN_TOP,
   TILE_GAP,
   tileXZ,
@@ -233,9 +232,9 @@ const BIOMES: Record<string, { champ: string; foret: string; montagne: string }>
 };
 
 function getBiome(state: GameState, x: number, y: number): string {
-  const t = state.tiles.find(tile => tile.x === x && tile.y === y);
+  const t = state.tiles.find((tile: GameState["tiles"][0]) => tile.x === x && tile.y === y);
   if (t && t.ownerId !== undefined) {
-    return state.players.find(p => p.id === t.ownerId)?.biome ?? "prairie";
+    return state.players.find((p: GameState["players"][0]) => p.id === t.ownerId)?.biome ?? "prairie";
   }
   let nearestCity = null;
   let minDist = Infinity;
@@ -244,7 +243,7 @@ function getBiome(state: GameState, x: number, y: number): string {
     if (d < minDist) { minDist = d; nearestCity = c; }
   }
   if (nearestCity) {
-    return state.players.find(p => p.id === nearestCity.ownerId)?.biome ?? "prairie";
+    return state.players.find((p: GameState["players"][0]) => p.id === nearestCity.ownerId)?.biome ?? "prairie";
   }
   return "prairie";
 }
@@ -280,7 +279,7 @@ export function Terrain({ state, onPick }: TerrainProps) {
     for (const tile of state.tiles) {
       if (isWater(tile.terrain)) continue;
       const { x: wx, z } = tileXZ(tile.x, tile.y, state.width, state.height);
-      const topY = TERRAIN_TOP[tile.terrain];
+      const topY = TERRAIN_TOP[tile.terrain] ?? 0;
       if (tile.terrain === "foret") {
         for (let k = 0; k < 3; k++) {
           const ox = (rnd(tile.x, tile.y, k * 2 + 1) - 0.5) * 0.5;
